@@ -1,5 +1,3 @@
-// Paste your Firebase web-app config here (see README.md, step 2).
-// Leave as-is to run in local demo mode.
 export const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDLZly7gEK4jtj28ZVrxxPSRZ1NUOiK4bg",
   authDomain: "checklistsfortrips.firebaseapp.com",
@@ -9,6 +7,3 @@ export const FIREBASE_CONFIG = {
   messagingSenderId: "837442490982",
   appId: "1:837442490982:web:a10ce2f3a0deabe48693a7"
 };
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
