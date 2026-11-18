@@ -58,6 +58,7 @@ dialog form{display:flex;flex-direction:column;gap:10px}
       <button id="copy">Copy link</button>
     </div>
     <p class="hint" style="margin:8px 0 0">Send this link to your friend. Anyone with it can edit the list.</p>
+    <p class="hint" style="margin:10px 0 0"><button id="mine">Copy my personal link</button> Open it on your other devices to stay the same person. Keep it private: whoever opens it becomes you.</p>
   </div>
   <div id="sections"></div>
   <div class="card newsec">
@@ -88,6 +89,13 @@ if (!listId) {
 
 /* ---------- identity (per browser) ---------- */
 const uidKey = "keta-uid", nameKey = "keta-name";
+// Personal link: carries your identity to another device
+if (params.get("me")) {
+  localStorage.setItem(uidKey, params.get("me"));
+  if (params.get("n")) localStorage.setItem(nameKey, params.get("n"));
+  params.delete("me"); params.delete("n");
+  history.replaceState(null, "", "?" + params.toString());
+}
 let uid = localStorage.getItem(uidKey);
 if (!uid) { uid = "u" + Math.random().toString(36).slice(2, 10); localStorage.setItem(uidKey, uid); }
 
@@ -180,6 +188,12 @@ let state = {}; const drafts = {};
 $("banner").innerHTML = live ? "" : '<div class="banner"><b>Demo mode.</b> Changes stay in this browser only. Add your Firebase details to <code>config.js</code> to share the list (see README).</div>';
 $("link").value = location.href;
 $("copy").onclick = async () => { try { await navigator.clipboard.writeText(location.href); $("copy").textContent = "Copied ✓"; } catch { $("link").select(); } setTimeout(() => $("copy").textContent = "Copy link", 1500); };
+
+$("mine").onclick = async () => {
+  const u = new URL(location.href); u.searchParams.set("me", uid); u.searchParams.set("n", localStorage.getItem(nameKey) || "");
+  try { await navigator.clipboard.writeText(u.toString()); $("mine").textContent = "Copied ✓"; } catch { prompt("Copy this link:", u.toString()); }
+  setTimeout(() => $("mine").textContent = "Copy my personal link", 1500);
+};
 
 const COLORS = ["var(--me)", "var(--other)", "#8e5bd6", "#c2476b", "#2f8f5b"];
 function members() {
