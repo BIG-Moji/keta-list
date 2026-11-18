@@ -287,3 +287,581 @@ start();
 </script>
 </body>
 </html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keta Packing List</title>
+<style>
+:root{--bg:#f7f5f0;--card:#fff;--ink:#1d2a3a;--mute:#6b7685;--line:#e4e0d6;--accent:#1f6f8b;--me:#1f6f8b;--other:#d9822b;--ok:#2f8f5b}
+@media (prefers-color-scheme:dark){:root{--bg:#12171d;--card:#1a212a;--ink:#e8ecf1;--mute:#93a0b0;--line:#2a3340;--accent:#5ab4d1;--me:#5ab4d1;--other:#f0a35a;--ok:#5fc08a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.wrap{max-width:760px;margin:0 auto;padding:16px}
+h1{font-size:1.5rem;margin:8px 0 2px}
+.sub{color:var(--mute);margin:0 0 14px;font-size:.92rem}
+.banner{background:#fff4d6;color:#5a4300;border:1px solid #ecd48a;border-radius:10px;padding:10px 12px;font-size:.88rem;margin-bottom:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:14px}
+.people{display:flex;flex-wrap:wrap;gap:10px}
+.person{flex:1 1 150px}
+.person b{font-size:.9rem}
+.bar{height:8px;background:var(--line);border-radius:6px;overflow:hidden;margin-top:4px}
+.bar i{display:block;height:100%;background:var(--c,var(--accent));width:0;transition:width .25s}
+.pc{font-size:.78rem;color:var(--mute)}
+.share{display:flex;gap:8px;margin-top:10px}
+.share input{flex:1;min-width:0}
+input[type=text]{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:8px 12px}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.sec h2{font-size:1.05rem;margin:0 0 6px;display:flex;align-items:center;gap:8px}
+.sec h2 span{flex:1}
+.x{border:0;background:none;color:var(--mute);padding:2px 8px;font-size:1.1rem}
+.item{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line)}
+.item:first-of-type{border-top:0}
+.item .t{flex:1;min-width:0;word-break:break-word}
+.item.alldone .t{color:var(--mute);text-decoration:line-through}
+.cb{display:flex;flex-direction:column;align-items:center;gap:1px;min-width:44px}
+.cb small{font-size:.62rem;color:var(--mute);max-width:56px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cb input{width:22px;height:22px;margin:0;accent-color:var(--other)}
+.cb.me input{accent-color:var(--me)}
+.cb input:disabled{opacity:.9}
+.add{display:flex;gap:8px;margin-top:8px}
+.add input{flex:1;min-width:0}
+.newsec{display:flex;gap:8px}
+.newsec input{flex:1;min-width:0}
+.hint{color:var(--mute);font-size:.82rem}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);max-width:340px}
+dialog form{display:flex;flex-direction:column;gap:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🌴 Keta Packing List</h1>
+  <p class="sub">Tick your own box. Everyone else's ticks show up live beside it.</p>
+  <div id="banner"></div>
+  <div class="card">
+    <div class="people" id="people"></div>
+    <div class="share">
+      <input type="text" id="link" readonly aria-label="Share link">
+      <button id="copy">Copy link</button>
+    </div>
+    <p class="hint" style="margin:8px 0 0">Send this link to your friend. Anyone with it can edit the list.</p>
+    <p class="hint" style="margin:10px 0 0"><button id="mine">Copy my personal link</button> Open it on your other devices to stay the same person. Keep it private: whoever opens it becomes you.</p>
+  </div>
+  <div id="sections"></div>
+  <div class="card newsec">
+    <input type="text" id="newsec" placeholder="New section (e.g. Beach gear)">
+    <button id="addsec" class="primary">Add section</button>
+  </div>
+</div>
+
+<dialog id="nameDlg">
+  <form method="dialog" id="nameForm">
+    <b>What's your name?</b>
+    <input type="text" id="nameInput" maxlength="20" placeholder="e.g. Gray" required autocomplete="given-name">
+    <button class="primary">Join the list</button>
+  </form>
+</dialog>
+
+<script type="module">
+import { FIREBASE_CONFIG } from "./config.js";
+
+/* ---------- list id (from URL, ?list=...) ---------- */
+const params = new URLSearchParams(location.search);
+let listId = params.get("list");
+if (!listId) {
+  listId = "keta-" + Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 6);
+  params.set("list", listId);
+  history.replaceState(null, "", "?" + params.toString());
+}
+
+/* ---------- identity (per browser) ---------- */
+const uidKey = "keta-uid", nameKey = "keta-name";
+// Personal link: carries your identity to another device
+if (params.get("me")) {
+  localStorage.setItem(uidKey, params.get("me"));
+  if (params.get("n")) localStorage.setItem(nameKey, params.get("n"));
+  params.delete("me"); params.delete("n");
+  history.replaceState(null, "", "?" + params.toString());
+}
+let uid = localStorage.getItem(uidKey);
+if (!uid) { uid = "u" + Math.random().toString(36).slice(2, 10); localStorage.setItem(uidKey, uid); }
+
+/* ---------- starter list ---------- */
+const SEED = [
+  ["Clothes", ["Lightweight cotton t-shirts / tops (5–7)","Shorts & casuals (3–4)","Light trousers / linen pants (2)","Swimwear","Underwear & socks (14-day supply)","Comfortable walking shoes / sneakers","Sandals / flip-flops/Slides","Light jacket / windbreaker / cardigan","Wide-brim hat / sun cap"]],
+  ["Toiletries", ["Toothbrush, toothpaste","Insect repellent (mosquito spray/cream)","Deodorant & fragrance","Hairbrush / comb & hair ties","Razor & shaving cream","Quick-dry travel towel","Personal hygiene & sanitary products"]],
+  ["Electronics", ["Smartphone & high-capacity power bank","Device chargers & charging cables","Universal travel adapter / extension strip","Headphones / earbuds"]],
+  ["Health", ["Personal prescription medications","Basic first aid kit (bandages, antiseptic wipes)","Pain relievers & anti-inflammatory meds","Anti-diarrheal medication & rehydration salts","Hand sanitizer & wet wipes"]],
+  ["Sleeping", ["Light travel sheet liner / blanket"]],
+  ["Other essentials", ["National ID & driver's license","Cash & payment cards (MOMO)","Water bottle","Daypack / beach bag (Duffle bag)","Sunglasses (UV protection)","Dry bag / waterproof pouch for electronics","Travel laundry detergent bag"]],
+  ["Food: Dry staples & grains", ["Rice (perfumed or local, 2–5 kg)","Gari (1–2 kg)","Spaghetti / Macaroni (3–4 packs)","Instant noodles (1 pack / carton)","Tom brown (for breakfast)"]],
+  ["Food: Proteins & canned goods (optional)", ["Canned sardine / mackerel / tuna (6–10 cans)","Canned corned beef (2–3 cans)","Baked beans / sweetcorn (3–4 cans)","Eggs (1 crate, packed securely)"]],
+  ["Food: Cooking oil, condiments & spices", ["Vegetable oil (1–2 liters)","Tomato paste / puree (tin or sachet pack)","Onions, garlic & ginger","Seasoning cubes / powder & salt","Shito (black pepper sauce, 1–2 jars)"]],
+  ["Food: Breakfast & snacks", ["Powdered milk (sachets or tin)","Sugar / honey","Coffee / tea bags / cocoa powder","Biscuits, crackers & nuts"]],
+  ["Food: Water & beverages", ["Bottled and Sachet water (starter pack, 1–2 cartons)"]],
+];
+function seedData() {
+  const sections = {}, items = {}; let n = 0;
+  SEED.forEach(([name, list], si) => {
+    const sid = "s" + String(si).padStart(2, "0");
+    sections[sid] = { name, order: si };
+    list.forEach((text, ii) => { items["i" + String(++n).padStart(3, "0")] = { text, section: sid, order: n }; });
+  });
+  return { sections, items };
+}
+const newId = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+
+/* ---------- storage: Firebase, or local demo mode ---------- */
+const live = FIREBASE_CONFIG && FIREBASE_CONFIG.databaseURL && !FIREBASE_CONFIG.databaseURL.includes("YOUR-");
+let store;
+if (live) {
+  const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
+  const { getDatabase, ref, onValue, set, update, remove, get } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js");
+  const db = getDatabase(initializeApp(FIREBASE_CONFIG));
+  const root = `lists/${listId}`;
+  store = {
+    sub(cb) { onValue(ref(db, root), s => cb(s.val() || {})); },
+    async init(id, name) {
+      let snap = await get(ref(db, root));
+      let d = snap.val() || {};
+      if (!d.sections) { await update(ref(db, root), { ...seedData(), owner: id }); d = { owner: id }; }
+      if (d.removed && d.removed[id]) return { removed: true };
+      if (!d.owner && d.members && d.members[id]) await set(ref(db, root + "/owner"), id);
+      await set(ref(db, `${root}/members/${id}`), { name });
+      return { removed: false };
+    },
+    async removeMember(id, itemIds) {
+      const u = { [`members/${id}`]: null, [`removed/${id}`]: true };
+      itemIds.forEach(i => u[`items/${i}/checks/${id}`] = null);
+      await update(ref(db, root), u);
+    },
+    setCheck: (iid, id, v) => v ? set(ref(db, `${root}/items/${iid}/checks/${id}`), true) : remove(ref(db, `${root}/items/${iid}/checks/${id}`)),
+    addItem: (iid, o) => set(ref(db, `${root}/items/${iid}`), o),
+    delItem: iid => remove(ref(db, `${root}/items/${iid}`)),
+    addSection: (sid, o) => set(ref(db, `${root}/sections/${sid}`), o),
+    delSection: async (sid, itemIds) => { const u = { [`sections/${sid}`]: null }; itemIds.forEach(i => u[`items/${i}`] = null); await update(ref(db, root), u); },
+  };
+} else {
+  const key = "keta-demo-" + listId;
+  const read = () => JSON.parse(localStorage.getItem(key) || "{}");
+  const write = d => { localStorage.setItem(key, JSON.stringify(d)); fire(); };
+  let cb = () => {}; const fire = () => cb(read());
+  addEventListener("storage", e => { if (e.key === key) fire(); });
+  store = {
+    sub(f) { cb = f; fire(); },
+    async init(id, name) {
+      let d = read();
+      if (!d.sections) d = { ...d, ...seedData(), owner: id };
+      if (d.removed && d.removed[id]) return { removed: true };
+      if (!d.owner && d.members && d.members[id]) d.owner = id;
+      (d.members ||= {})[id] = { name }; write(d);
+      return { removed: false };
+    },
+    async removeMember(id, itemIds) {
+      const d = read(); delete (d.members || {})[id]; (d.removed ||= {})[id] = true;
+      itemIds.forEach(i => { if (d.items[i] && d.items[i].checks) delete d.items[i].checks[id]; }); write(d);
+    },
+    setCheck: (iid, id, v) => { const d = read(); const it = d.items[iid]; if (!it) return; it.checks ||= {}; v ? it.checks[id] = true : delete it.checks[id]; write(d); },
+    addItem: (iid, o) => { const d = read(); (d.items ||= {})[iid] = o; write(d); },
+    delItem: iid => { const d = read(); delete d.items[iid]; write(d); },
+    addSection: (sid, o) => { const d = read(); (d.sections ||= {})[sid] = o; write(d); },
+    delSection: (sid, ids) => { const d = read(); delete d.sections[sid]; ids.forEach(i => delete d.items[i]); write(d); },
+  };
+}
+
+/* ---------- UI ---------- */
+const $ = id => document.getElementById(id);
+let state = {}; const drafts = {};
+$("banner").innerHTML = live ? "" : '<div class="banner"><b>Demo mode.</b> Changes stay in this browser only. Add your Firebase details to <code>config.js</code> to share the list (see README).</div>';
+$("link").value = location.href;
+$("copy").onclick = async () => { try { await navigator.clipboard.writeText(location.href); $("copy").textContent = "Copied ✓"; } catch { $("link").select(); } setTimeout(() => $("copy").textContent = "Copy link", 1500); };
+
+$("mine").onclick = async () => {
+  const u = new URL(location.href); u.searchParams.set("me", uid); u.searchParams.set("n", localStorage.getItem(nameKey) || "");
+  try { await navigator.clipboard.writeText(u.toString()); $("mine").textContent = "Copied ✓"; } catch { prompt("Copy this link:", u.toString()); }
+  setTimeout(() => $("mine").textContent = "Copy my personal link", 1500);
+};
+
+const COLORS = ["var(--me)", "var(--other)", "#8e5bd6", "#c2476b", "#2f8f5b"];
+function members() {
+  const m = state.members || {};
+  const ids = Object.keys(m).sort((a, b) => (a === uid ? -1 : b === uid ? 1 : m[a].name.localeCompare(m[b].name)));
+  return ids.map(id => ({ id, name: m[id].name }));
+}
+
+function render() {
+  if (state.removed && state.removed[uid]) { showRemoved(); return; }
+  const focusId = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.draft : null;
+  const mem = members();
+  const items = Object.entries(state.items || {}).map(([id, v]) => ({ id, ...v }));
+  const secs = Object.entries(state.sections || {}).map(([id, v]) => ({ id, ...v })).sort((a, b) => a.order - b.order);
+
+  // progress
+  const ppl = $("people"); ppl.textContent = "";
+  mem.forEach((p, i) => {
+    const done = items.filter(it => it.checks && it.checks[p.id]).length;
+    const d = document.createElement("div"); d.className = "person";
+    d.style.setProperty("--c", p.id === uid ? "var(--me)" : COLORS[(i % (COLORS.length - 1)) + 1]);
+    const b = document.createElement("b"); b.textContent = p.name + (p.id === uid ? " (you)" : "");
+    const bar = document.createElement("div"); bar.className = "bar"; const fill = document.createElement("i");
+    fill.style.width = items.length ? (100 * done / items.length) + "%" : "0"; bar.append(fill);
+    const pc = document.createElement("div"); pc.className = "pc"; pc.textContent = `${done} of ${items.length} packed`;
+    if (state.owner === uid && p.id !== uid) {
+      const rm = document.createElement("button"); rm.className = "x"; rm.title = `Remove ${p.name}`; rm.textContent = "✕";
+      rm.onclick = () => { if (confirm(`Remove ${p.name} from the list? Their ticks are deleted and they can't rejoin from their device.`)) store.removeMember(p.id, items.map(i => i.id)); };
+      b.append(" ", rm);
+    }
+    d.append(b, bar, pc); ppl.append(d);
+  });
+
+  // sections
+  const host = $("sections"); host.textContent = "";
+  secs.forEach(s => {
+    const card = document.createElement("div"); card.className = "card sec";
+    const h = document.createElement("h2"); const sp = document.createElement("span"); sp.textContent = s.name;
+    const del = document.createElement("button"); del.className = "x"; del.title = "Remove section"; del.textContent = "🗑";
+    del.onclick = () => { const mine = items.filter(i => i.section === s.id); if (confirm(`Remove "${s.name}"${mine.length ? ` and its ${mine.length} items` : ""} for everyone?`)) store.delSection(s.id, mine.map(i => i.id)); };
+    h.append(sp, del); card.append(h);
+
+    items.filter(it => it.section === s.id).sort((a, b) => a.order - b.order).forEach(it => {
+      const row = document.createElement("div"); row.className = "item";
+      if (mem.length && mem.every(p => it.checks && it.checks[p.id])) row.classList.add("alldone");
+      const t = document.createElement("div"); t.className = "t"; t.textContent = it.text; row.append(t);
+      mem.forEach((p, i) => {
+        const w = document.createElement("label"); w.className = "cb" + (p.id === uid ? " me" : "");
+        const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!(it.checks && it.checks[p.id]);
+        cb.setAttribute("aria-label", `${p.name}: ${it.text}`);
+        if (p.id === uid) cb.onchange = () => store.setCheck(it.id, uid, cb.checked); else cb.disabled = true;
+        const sm = document.createElement("small"); sm.textContent = p.id === uid ? "You" : p.name;
+        w.append(cb, sm); row.append(w);
+      });
+      const x = document.createElement("button"); x.className = "x"; x.title = "Remove item"; x.textContent = "✕";
+      x.onclick = () => store.delItem(it.id); row.append(x);
+      card.append(row);
+    });
+
+    const add = document.createElement("div"); add.className = "add";
+    const inp = document.createElement("input"); inp.type = "text"; inp.placeholder = "Add an item…"; inp.dataset.draft = s.id; inp.value = drafts[s.id] || "";
+    inp.oninput = () => drafts[s.id] = inp.value;
+    const go = () => { const v = inp.value.trim(); if (!v) return; const n = Math.max(0, ...items.filter(i => i.section === s.id).map(i => i.order)) + 1; drafts[s.id] = ""; inp.value = ""; store.addItem(newId("i"), { text: v, section: s.id, order: Date.now() }); };
+    inp.onkeydown = e => { if (e.key === "Enter") go(); };
+    const btn = document.createElement("button"); btn.textContent = "Add"; btn.onclick = go;
+    add.append(inp, btn); card.append(add); host.append(card);
+  });
+  if (focusId) { const el = host.querySelector(`[data-draft="${focusId}"]`); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
+}
+
+$("addsec").onclick = () => { const v = $("newsec").value.trim(); if (!v) return; $("newsec").value = ""; store.addSection(newId("s"), { name: v, order: Date.now() }); };
+$("newsec").onkeydown = e => { if (e.key === "Enter") $("addsec").click(); };
+
+function showRemoved() {
+  document.querySelector(".wrap").innerHTML = '<h1>🌴 Keta Packing List</h1><div class="card"><b>You were removed from this list.</b><p class="hint">Ask the person who shared it with you if this was a mistake.</p></div>';
+}
+
+/* ---------- start ---------- */
+async function start() {
+  let name = localStorage.getItem(nameKey);
+  if (!name) {
+    const dlg = $("nameDlg"); dlg.showModal();
+    await new Promise(res => $("nameForm").addEventListener("submit", () => res()));
+    name = $("nameInput").value.trim() || "Guest"; localStorage.setItem(nameKey, name);
+  }
+  store.sub(s => { state = s; render(); });
+  const r = await store.init(uid, name);
+  if (r.removed) showRemoved();
+}
+start();
+</script>
+</body>
+</html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keta Packing List</title>
+<style>
+:root{--bg:#f7f5f0;--card:#fff;--ink:#1d2a3a;--mute:#6b7685;--line:#e4e0d6;--accent:#1f6f8b;--me:#1f6f8b;--other:#d9822b;--ok:#2f8f5b}
+@media (prefers-color-scheme:dark){:root{--bg:#12171d;--card:#1a212a;--ink:#e8ecf1;--mute:#93a0b0;--line:#2a3340;--accent:#5ab4d1;--me:#5ab4d1;--other:#f0a35a;--ok:#5fc08a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.wrap{max-width:760px;margin:0 auto;padding:16px}
+h1{font-size:1.5rem;margin:8px 0 2px}
+.sub{color:var(--mute);margin:0 0 14px;font-size:.92rem}
+.banner{background:#fff4d6;color:#5a4300;border:1px solid #ecd48a;border-radius:10px;padding:10px 12px;font-size:.88rem;margin-bottom:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:14px}
+.people{display:flex;flex-wrap:wrap;gap:10px}
+.person{flex:1 1 150px}
+.person b{font-size:.9rem}
+.bar{height:8px;background:var(--line);border-radius:6px;overflow:hidden;margin-top:4px}
+.bar i{display:block;height:100%;background:var(--c,var(--accent));width:0;transition:width .25s}
+.pc{font-size:.78rem;color:var(--mute)}
+.share{display:flex;gap:8px;margin-top:10px}
+.share input{flex:1;min-width:0}
+input[type=text]{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:8px 12px}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.sec h2{font-size:1.05rem;margin:0 0 6px;display:flex;align-items:center;gap:8px}
+.sec h2 span{flex:1}
+.x{border:0;background:none;color:var(--mute);padding:2px 8px;font-size:1.1rem}
+.item{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line)}
+.item:first-of-type{border-top:0}
+.item .t{flex:1;min-width:0;word-break:break-word}
+.item.alldone .t{color:var(--mute);text-decoration:line-through}
+.cb{display:flex;flex-direction:column;align-items:center;gap:1px;min-width:44px}
+.cb small{font-size:.62rem;color:var(--mute);max-width:56px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cb input{width:22px;height:22px;margin:0;accent-color:var(--other)}
+.cb.me input{accent-color:var(--me)}
+.cb input:disabled{opacity:.9}
+.add{display:flex;gap:8px;margin-top:8px}
+.add input{flex:1;min-width:0}
+.newsec{display:flex;gap:8px}
+.newsec input{flex:1;min-width:0}
+.hint{color:var(--mute);font-size:.82rem}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);max-width:340px}
+dialog form{display:flex;flex-direction:column;gap:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🌴 Keta Packing List</h1>
+  <p class="sub">Tick your own box. Everyone else's ticks show up live beside it.</p>
+  <div id="banner"></div>
+  <div class="card">
+    <div class="people" id="people"></div>
+    <div class="share">
+      <input type="text" id="link" readonly aria-label="Share link">
+      <button id="copy">Copy link</button>
+    </div>
+    <p class="hint" style="margin:8px 0 0">Send this link to your friend. Anyone with it can edit the list.</p>
+    <p class="hint" style="margin:10px 0 0"><button id="mine">Copy my personal link</button> Open it on your other devices to stay the same person. Keep it private: whoever opens it becomes you.</p>
+  </div>
+  <div id="sections"></div>
+  <div class="card newsec">
+    <input type="text" id="newsec" placeholder="New section (e.g. Beach gear)">
+    <button id="addsec" class="primary">Add section</button>
+  </div>
+</div>
+
+<dialog id="nameDlg">
+  <form method="dialog" id="nameForm">
+    <b>What's your name?</b>
+    <input type="text" id="nameInput" maxlength="20" placeholder="e.g. Gray" required autocomplete="given-name">
+    <button class="primary">Join the list</button>
+  </form>
+</dialog>
+
+<script type="module">
+import { FIREBASE_CONFIG } from "./config.js";
+
+/* ---------- list id (from URL, ?list=...) ---------- */
+const params = new URLSearchParams(location.search);
+let listId = params.get("list");
+if (!listId) {
+  listId = "keta-" + Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 6);
+  params.set("list", listId);
+  history.replaceState(null, "", "?" + params.toString());
+}
+
+/* ---------- identity (per browser) ---------- */
+const uidKey = "keta-uid", nameKey = "keta-name";
+// Personal link: carries your identity to another device
+if (params.get("me")) {
+  localStorage.setItem(uidKey, params.get("me"));
+  if (params.get("n")) localStorage.setItem(nameKey, params.get("n"));
+  params.delete("me"); params.delete("n");
+  history.replaceState(null, "", "?" + params.toString());
+}
+let uid = localStorage.getItem(uidKey);
+if (!uid) { uid = "u" + Math.random().toString(36).slice(2, 10); localStorage.setItem(uidKey, uid); }
+
+/* ---------- starter list ---------- */
+const SEED = [
+  ["Clothes", ["Lightweight cotton t-shirts / tops (5–7)","Shorts & casuals (3–4)","Light trousers / linen pants (2)","Swimwear","Underwear & socks (14-day supply)","Comfortable walking shoes / sneakers","Sandals / flip-flops/Slides","Light jacket / windbreaker / cardigan","Wide-brim hat / sun cap"]],
+  ["Toiletries", ["Toothbrush, toothpaste","Insect repellent (mosquito spray/cream)","Deodorant & fragrance","Hairbrush / comb & hair ties","Razor & shaving cream","Quick-dry travel towel","Personal hygiene & sanitary products"]],
+  ["Electronics", ["Smartphone & high-capacity power bank","Device chargers & charging cables","Universal travel adapter / extension strip","Headphones / earbuds"]],
+  ["Health", ["Personal prescription medications","Basic first aid kit (bandages, antiseptic wipes)","Pain relievers & anti-inflammatory meds","Anti-diarrheal medication & rehydration salts","Hand sanitizer & wet wipes"]],
+  ["Sleeping", ["Light travel sheet liner / blanket"]],
+  ["Other essentials", ["National ID & driver's license","Cash & payment cards (MOMO)","Water bottle","Daypack / beach bag (Duffle bag)","Sunglasses (UV protection)","Dry bag / waterproof pouch for electronics","Travel laundry detergent bag"]],
+  ["Food: Dry staples & grains", ["Rice (perfumed or local, 2–5 kg)","Gari (1–2 kg)","Spaghetti / Macaroni (3–4 packs)","Instant noodles (1 pack / carton)","Tom brown (for breakfast)"]],
+  ["Food: Proteins & canned goods (optional)", ["Canned sardine / mackerel / tuna (6–10 cans)","Canned corned beef (2–3 cans)","Baked beans / sweetcorn (3–4 cans)","Eggs (1 crate, packed securely)"]],
+  ["Food: Cooking oil, condiments & spices", ["Vegetable oil (1–2 liters)","Tomato paste / puree (tin or sachet pack)","Onions, garlic & ginger","Seasoning cubes / powder & salt","Shito (black pepper sauce, 1–2 jars)"]],
+  ["Food: Breakfast & snacks", ["Powdered milk (sachets or tin)","Sugar / honey","Coffee / tea bags / cocoa powder","Biscuits, crackers & nuts"]],
+  ["Food: Water & beverages", ["Bottled and Sachet water (starter pack, 1–2 cartons)"]],
+];
+function seedData() {
+  const sections = {}, items = {}; let n = 0;
+  SEED.forEach(([name, list], si) => {
+    const sid = "s" + String(si).padStart(2, "0");
+    sections[sid] = { name, order: si };
+    list.forEach((text, ii) => { items["i" + String(++n).padStart(3, "0")] = { text, section: sid, order: n }; });
+  });
+  return { sections, items };
+}
+const newId = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+
+/* ---------- storage: Firebase, or local demo mode ---------- */
+const live = FIREBASE_CONFIG && FIREBASE_CONFIG.databaseURL && !FIREBASE_CONFIG.databaseURL.includes("YOUR-");
+let store;
+if (live) {
+  const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
+  const { getDatabase, ref, onValue, set, update, remove, get } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js");
+  const db = getDatabase(initializeApp(FIREBASE_CONFIG));
+  const root = `lists/${listId}`;
+  store = {
+    sub(cb) { onValue(ref(db, root), s => cb(s.val() || {})); },
+    async init(id, name) {
+      let snap = await get(ref(db, root));
+      let d = snap.val() || {};
+      if (!d.sections) { await update(ref(db, root), { ...seedData(), owner: id }); d = { owner: id }; }
+      if (d.removed && d.removed[id]) return { removed: true };
+      if (!d.owner && d.members && d.members[id]) await set(ref(db, root + "/owner"), id);
+      await set(ref(db, `${root}/members/${id}`), { name });
+      return { removed: false };
+    },
+    async removeMember(id, itemIds) {
+      const u = { [`members/${id}`]: null, [`removed/${id}`]: true };
+      itemIds.forEach(i => u[`items/${i}/checks/${id}`] = null);
+      await update(ref(db, root), u);
+    },
+    setCheck: (iid, id, v) => v ? set(ref(db, `${root}/items/${iid}/checks/${id}`), true) : remove(ref(db, `${root}/items/${iid}/checks/${id}`)),
+    addItem: (iid, o) => set(ref(db, `${root}/items/${iid}`), o),
+    delItem: iid => remove(ref(db, `${root}/items/${iid}`)),
+    addSection: (sid, o) => set(ref(db, `${root}/sections/${sid}`), o),
+    delSection: async (sid, itemIds) => { const u = { [`sections/${sid}`]: null }; itemIds.forEach(i => u[`items/${i}`] = null); await update(ref(db, root), u); },
+  };
+} else {
+  const key = "keta-demo-" + listId;
+  const read = () => JSON.parse(localStorage.getItem(key) || "{}");
+  const write = d => { localStorage.setItem(key, JSON.stringify(d)); fire(); };
+  let cb = () => {}; const fire = () => cb(read());
+  addEventListener("storage", e => { if (e.key === key) fire(); });
+  store = {
+    sub(f) { cb = f; fire(); },
+    async init(id, name) {
+      let d = read();
+      if (!d.sections) d = { ...d, ...seedData(), owner: id };
+      if (d.removed && d.removed[id]) return { removed: true };
+      if (!d.owner && d.members && d.members[id]) d.owner = id;
+      (d.members ||= {})[id] = { name }; write(d);
+      return { removed: false };
+    },
+    async removeMember(id, itemIds) {
+      const d = read(); delete (d.members || {})[id]; (d.removed ||= {})[id] = true;
+      itemIds.forEach(i => { if (d.items[i] && d.items[i].checks) delete d.items[i].checks[id]; }); write(d);
+    },
+    setCheck: (iid, id, v) => { const d = read(); const it = d.items[iid]; if (!it) return; it.checks ||= {}; v ? it.checks[id] = true : delete it.checks[id]; write(d); },
+    addItem: (iid, o) => { const d = read(); (d.items ||= {})[iid] = o; write(d); },
+    delItem: iid => { const d = read(); delete d.items[iid]; write(d); },
+    addSection: (sid, o) => { const d = read(); (d.sections ||= {})[sid] = o; write(d); },
+    delSection: (sid, ids) => { const d = read(); delete d.sections[sid]; ids.forEach(i => delete d.items[i]); write(d); },
+  };
+}
+
+/* ---------- UI ---------- */
+const $ = id => document.getElementById(id);
+let state = {}; const drafts = {};
+$("banner").innerHTML = live ? "" : '<div class="banner"><b>Demo mode.</b> Changes stay in this browser only. Add your Firebase details to <code>config.js</code> to share the list (see README).</div>';
+$("link").value = location.href;
+$("copy").onclick = async () => { try { await navigator.clipboard.writeText(location.href); $("copy").textContent = "Copied ✓"; } catch { $("link").select(); } setTimeout(() => $("copy").textContent = "Copy link", 1500); };
+
+$("mine").onclick = async () => {
+  const u = new URL(location.href); u.searchParams.set("me", uid); u.searchParams.set("n", localStorage.getItem(nameKey) || "");
+  try { await navigator.clipboard.writeText(u.toString()); $("mine").textContent = "Copied ✓"; } catch { prompt("Copy this link:", u.toString()); }
+  setTimeout(() => $("mine").textContent = "Copy my personal link", 1500);
+};
+
+const COLORS = ["var(--me)", "var(--other)", "#8e5bd6", "#c2476b", "#2f8f5b"];
+function members() {
+  const m = state.members || {};
+  const ids = Object.keys(m).sort((a, b) => (a === uid ? -1 : b === uid ? 1 : m[a].name.localeCompare(m[b].name)));
+  return ids.map(id => ({ id, name: m[id].name }));
+}
+
+function render() {
+  if (state.removed && state.removed[uid]) { showRemoved(); return; }
+  const focusId = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.draft : null;
+  const mem = members();
+  const items = Object.entries(state.items || {}).map(([id, v]) => ({ id, ...v }));
+  const secs = Object.entries(state.sections || {}).map(([id, v]) => ({ id, ...v })).sort((a, b) => a.order - b.order);
+
+  // progress
+  const ppl = $("people"); ppl.textContent = "";
+  mem.forEach((p, i) => {
+    const done = items.filter(it => it.checks && it.checks[p.id]).length;
+    const d = document.createElement("div"); d.className = "person";
+    d.style.setProperty("--c", p.id === uid ? "var(--me)" : COLORS[(i % (COLORS.length - 1)) + 1]);
+    const b = document.createElement("b"); b.textContent = p.name + (p.id === uid ? " (you)" : "");
+    const bar = document.createElement("div"); bar.className = "bar"; const fill = document.createElement("i");
+    fill.style.width = items.length ? (100 * done / items.length) + "%" : "0"; bar.append(fill);
+    const pc = document.createElement("div"); pc.className = "pc"; pc.textContent = `${done} of ${items.length} packed`;
+    if (state.owner === uid && p.id !== uid) {
+      const rm = document.createElement("button"); rm.className = "x"; rm.title = `Remove ${p.name}`; rm.textContent = "✕";
+      rm.onclick = () => { if (confirm(`Remove ${p.name} from the list? Their ticks are deleted and they can't rejoin from their device.`)) store.removeMember(p.id, items.map(i => i.id)); };
+      b.append(" ", rm);
+    }
+    d.append(b, bar, pc); ppl.append(d);
+  });
+
+  // sections
+  const host = $("sections"); host.textContent = "";
+  secs.forEach(s => {
+    const card = document.createElement("div"); card.className = "card sec";
+    const h = document.createElement("h2"); const sp = document.createElement("span"); sp.textContent = s.name;
+    const del = document.createElement("button"); del.className = "x"; del.title = "Remove section"; del.textContent = "🗑";
+    del.onclick = () => { const mine = items.filter(i => i.section === s.id); if (confirm(`Remove "${s.name}"${mine.length ? ` and its ${mine.length} items` : ""} for everyone?`)) store.delSection(s.id, mine.map(i => i.id)); };
+    h.append(sp, del); card.append(h);
+
+    items.filter(it => it.section === s.id).sort((a, b) => a.order - b.order).forEach(it => {
+      const row = document.createElement("div"); row.className = "item";
+      if (mem.length && mem.every(p => it.checks && it.checks[p.id])) row.classList.add("alldone");
+      const t = document.createElement("div"); t.className = "t"; t.textContent = it.text; row.append(t);
+      mem.forEach((p, i) => {
+        const w = document.createElement("label"); w.className = "cb" + (p.id === uid ? " me" : "");
+        const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!(it.checks && it.checks[p.id]);
+        cb.setAttribute("aria-label", `${p.name}: ${it.text}`);
+        if (p.id === uid) cb.onchange = () => store.setCheck(it.id, uid, cb.checked); else cb.disabled = true;
+        const sm = document.createElement("small"); sm.textContent = p.id === uid ? "You" : p.name;
+        w.append(cb, sm); row.append(w);
+      });
+      const x = document.createElement("button"); x.className = "x"; x.title = "Remove item"; x.textContent = "✕";
+      x.onclick = () => store.delItem(it.id); row.append(x);
+      card.append(row);
+    });
+
+    const add = document.createElement("div"); add.className = "add";
+    const inp = document.createElement("input"); inp.type = "text"; inp.placeholder = "Add an item…"; inp.dataset.draft = s.id; inp.value = drafts[s.id] || "";
+    inp.oninput = () => drafts[s.id] = inp.value;
+    const go = () => { const v = inp.value.trim(); if (!v) return; const n = Math.max(0, ...items.filter(i => i.section === s.id).map(i => i.order)) + 1; drafts[s.id] = ""; inp.value = ""; store.addItem(newId("i"), { text: v, section: s.id, order: Date.now() }); };
+    inp.onkeydown = e => { if (e.key === "Enter") go(); };
+    const btn = document.createElement("button"); btn.textContent = "Add"; btn.onclick = go;
+    add.append(inp, btn); card.append(add); host.append(card);
+  });
+  if (focusId) { const el = host.querySelector(`[data-draft="${focusId}"]`); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
+}
+
+$("addsec").onclick = () => { const v = $("newsec").value.trim(); if (!v) return; $("newsec").value = ""; store.addSection(newId("s"), { name: v, order: Date.now() }); };
+$("newsec").onkeydown = e => { if (e.key === "Enter") $("addsec").click(); };
+
+function showRemoved() {
+  document.querySelector(".wrap").innerHTML = '<h1>🌴 Keta Packing List</h1><div class="card"><b>You were removed from this list.</b><p class="hint">Ask the person who shared it with you if this was a mistake.</p></div>';
+}
+
+/* ---------- start ---------- */
+async function start() {
+  let name = localStorage.getItem(nameKey);
+  if (!name) {
+    const dlg = $("nameDlg"); dlg.showModal();
+    await new Promise(res => $("nameForm").addEventListener("submit", () => res()));
+    name = $("nameInput").value.trim() || "Guest"; localStorage.setItem(nameKey, name);
+  }
+  store.sub(s => { state = s; render(); });
+  const r = await store.init(uid, name);
+  if (r.removed) showRemoved();
+}
+start();
+</script>
+</body>
+</html>
