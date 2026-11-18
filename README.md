@@ -30,3 +30,15 @@ Open your site. It creates a private list link like `...?list=keta-ab12cd34ef`. 
 - **Privacy:** there is no login. Anyone who has the long list link can view and edit it, so only share it with people you trust. Do not put sensitive information in the list. The Firebase `apiKey` in `config.js` is not a secret for this kind of app.
 - **Names:** each browser is remembered as one person. A different phone or browser counts as a new person.
 - **Starting a new list:** open the site without `?list=...` to get a fresh list with the starter items.
+
+## Admin, access and pledges (version 2)
+
+- **Admin code:** the person who creates the list is the admin. Their personal link contains a secret admin code (`k=`), so opening it on any phone or browser gives admin rights. Only a fingerprint (hash) of the code is stored in the database. Copy the personal link and keep it somewhere safe.
+- **Existing lists:** the original sharer opens the updated site **first**. The app adds an admin code, adds the kitchen lists and asks them to copy their personal link again.
+- **List access:** Food and Kitchen lists are visible to everyone. Personal lists (Clothes, Toiletries, ...) are restricted: friends only see them after the admin ticks them under **Lists** next to their name. The admin can also flip any list between "All can see" and "Restricted". The granted lists are stored in the member's record and in the `a=` part of their personal link. After a change, the person is asked to copy their personal link again.
+- **Duplicate devices:** the admin presses ✕ next to the duplicate. That device sees "This device was removed" and can paste its real personal link to continue as itself, so the browser is never permanently blocked. The admin can also press **Allow back** under "Removed devices".
+- **Admin colours:** only the admin sees other people's ticks in each person's own colour. Everyone else sees one colour.
+- **Food pledges:** each food item shows a progress bar for 15 people x 14 days (210 person-days). People pledge "I can bring enough to feed X people for Y days" or "I can bring enough for everyone". The item closes when the total reaches 210. Tinned and canned items just take a number of cans or tins.
+- **Kitchen items with limited spots:** items such as "Gas cylinder" (1) or "Sauce pans" (2) close when the spots are taken. The admin can change the limit with the **Limit** button.
+
+**Honest limit:** there are no logins. The admin code, list access and removals are enforced by the app, not by the database, so someone who deliberately edits the database directly could bypass them. For friends and family sharing a link this is normally fine.
