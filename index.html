@@ -34,14 +34,35 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .item.alldone .t{color:var(--mute);text-decoration:line-through}
 .cb{display:flex;flex-direction:column;align-items:center;gap:1px;min-width:44px}
 .cb small{font-size:.62rem;color:var(--mute);max-width:56px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cb input{width:22px;height:22px;margin:0;accent-color:var(--other)}
+.cb input{width:22px;height:22px;margin:0;accent-color:var(--me)}
 .cb.me input{accent-color:var(--me)}
 .cb input:disabled{opacity:.9}
 .add{display:flex;gap:8px;margin-top:8px}
 .add input{flex:1;min-width:0}
 .newsec{display:flex;gap:8px}
 .newsec input{flex:1;min-width:0}
+.item{flex-wrap:wrap}
+.fd{flex-basis:100%;display:flex;flex-direction:column;gap:5px;padding:2px 0 4px}
+.cover{height:7px;background:var(--line);border-radius:5px;overflow:hidden}
+.cover i{display:block;height:100%;background:var(--ok)}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{font-size:.72rem;border:1px solid var(--line);border-left:4px solid var(--c,var(--me));border-radius:6px;padding:1px 7px}
+.fd .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.fd .st{font-size:.78rem;color:var(--mute)}
+.closed{color:var(--ok);font-size:.82rem;font-weight:600}
+.notice{background:#e3f1fb;color:#0d3a56;border:1px solid #9cc7e6;border-radius:10px;padding:10px 12px;font-size:.88rem;margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.notice span{flex:1 1 220px}
+.adm{display:inline-flex;gap:2px;margin-left:4px;vertical-align:middle}
+.adm button,.sec h2 .adm button{padding:0 6px;font-size:.7rem;border-radius:6px;color:var(--mute)}
+.removed{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}
+.removed .r{display:flex;align-items:center;gap:8px;font-size:.84rem;margin:3px 0}
+dialog .opt{display:block;margin:6px 0;line-height:2}
+dialog input[type=number]{font:inherit;width:64px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:4px 6px}
+dialog .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.err{color:#b3261e;font-size:.85rem;min-height:1.1em}
 .hint{color:var(--mute);font-size:.82rem}
+.tag{font-size:.68rem;color:var(--mute);border:1px solid var(--line);border-radius:6px;padding:0 6px;margin-left:6px;white-space:nowrap;vertical-align:middle}
+.choices{display:flex;flex-direction:column;gap:8px}
 dialog{border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);max-width:340px}
 dialog form{display:flex;flex-direction:column;gap:10px}
 </style>
@@ -51,6 +72,7 @@ dialog form{display:flex;flex-direction:column;gap:10px}
   <h1>🌴 Keta Packing List</h1>
   <p class="sub">Tick your own box. Everyone else's ticks show up live beside it.</p>
   <div id="banner"></div>
+  <div id="notice"></div>
   <div class="card">
     <div class="people" id="people"></div>
     <div class="share">
@@ -67,583 +89,39 @@ dialog form{display:flex;flex-direction:column;gap:10px}
   </div>
 </div>
 
-<dialog id="nameDlg">
-  <form method="dialog" id="nameForm">
-    <b>What's your name?</b>
-    <input type="text" id="nameInput" maxlength="20" placeholder="e.g. Gray" required autocomplete="given-name">
-    <button class="primary">Join the list</button>
-  </form>
-</dialog>
-
-<script type="module">
-import { FIREBASE_CONFIG } from "./config.js";
-
-/* ---------- list id (from URL, ?list=...) ---------- */
-const params = new URLSearchParams(location.search);
-let listId = params.get("list");
-if (!listId) {
-  listId = "keta-" + Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 6);
-  params.set("list", listId);
-  history.replaceState(null, "", "?" + params.toString());
-}
-
-/* ---------- identity (per browser) ---------- */
-const uidKey = "keta-uid", nameKey = "keta-name";
-// Personal link: carries your identity to another device
-if (params.get("me")) {
-  localStorage.setItem(uidKey, params.get("me"));
-  if (params.get("n")) localStorage.setItem(nameKey, params.get("n"));
-  params.delete("me"); params.delete("n");
-  history.replaceState(null, "", "?" + params.toString());
-}
-let uid = localStorage.getItem(uidKey);
-if (!uid) { uid = "u" + Math.random().toString(36).slice(2, 10); localStorage.setItem(uidKey, uid); }
-
-/* ---------- starter list ---------- */
-const SEED = [
-  ["Clothes", ["Lightweight cotton t-shirts / tops (5–7)","Shorts & casuals (3–4)","Light trousers / linen pants (2)","Swimwear","Underwear & socks (14-day supply)","Comfortable walking shoes / sneakers","Sandals / flip-flops/Slides","Light jacket / windbreaker / cardigan","Wide-brim hat / sun cap"]],
-  ["Toiletries", ["Toothbrush, toothpaste","Insect repellent (mosquito spray/cream)","Deodorant & fragrance","Hairbrush / comb & hair ties","Razor & shaving cream","Quick-dry travel towel","Personal hygiene & sanitary products"]],
-  ["Electronics", ["Smartphone & high-capacity power bank","Device chargers & charging cables","Universal travel adapter / extension strip","Headphones / earbuds"]],
-  ["Health", ["Personal prescription medications","Basic first aid kit (bandages, antiseptic wipes)","Pain relievers & anti-inflammatory meds","Anti-diarrheal medication & rehydration salts","Hand sanitizer & wet wipes"]],
-  ["Sleeping", ["Light travel sheet liner / blanket"]],
-  ["Other essentials", ["National ID & driver's license","Cash & payment cards (MOMO)","Water bottle","Daypack / beach bag (Duffle bag)","Sunglasses (UV protection)","Dry bag / waterproof pouch for electronics","Travel laundry detergent bag"]],
-  ["Food: Dry staples & grains", ["Rice (perfumed or local, 2–5 kg)","Gari (1–2 kg)","Spaghetti / Macaroni (3–4 packs)","Instant noodles (1 pack / carton)","Tom brown (for breakfast)"]],
-  ["Food: Proteins & canned goods (optional)", ["Canned sardine / mackerel / tuna (6–10 cans)","Canned corned beef (2–3 cans)","Baked beans / sweetcorn (3–4 cans)","Eggs (1 crate, packed securely)"]],
-  ["Food: Cooking oil, condiments & spices", ["Vegetable oil (1–2 liters)","Tomato paste / puree (tin or sachet pack)","Onions, garlic & ginger","Seasoning cubes / powder & salt","Shito (black pepper sauce, 1–2 jars)"]],
-  ["Food: Breakfast & snacks", ["Powdered milk (sachets or tin)","Sugar / honey","Coffee / tea bags / cocoa powder","Biscuits, crackers & nuts"]],
-  ["Food: Water & beverages", ["Bottled and Sachet water (starter pack, 1–2 cartons)"]],
-];
-function seedData() {
-  const sections = {}, items = {}; let n = 0;
-  SEED.forEach(([name, list], si) => {
-    const sid = "s" + String(si).padStart(2, "0");
-    sections[sid] = { name, order: si };
-    list.forEach((text, ii) => { items["i" + String(++n).padStart(3, "0")] = { text, section: sid, order: n }; });
-  });
-  return { sections, items };
-}
-const newId = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-
-/* ---------- storage: Firebase, or local demo mode ---------- */
-const live = FIREBASE_CONFIG && FIREBASE_CONFIG.databaseURL && !FIREBASE_CONFIG.databaseURL.includes("YOUR-");
-let store;
-if (live) {
-  const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
-  const { getDatabase, ref, onValue, set, update, remove, get } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js");
-  const db = getDatabase(initializeApp(FIREBASE_CONFIG));
-  const root = `lists/${listId}`;
-  store = {
-    sub(cb) { onValue(ref(db, root), s => cb(s.val() || {})); },
-    async init(id, name) {
-      let snap = await get(ref(db, root));
-      let d = snap.val() || {};
-      if (!d.sections) { await update(ref(db, root), { ...seedData(), owner: id }); d = { owner: id }; }
-      if (d.removed && d.removed[id]) return { removed: true };
-      if (!d.owner && d.members && d.members[id]) await set(ref(db, root + "/owner"), id);
-      await set(ref(db, `${root}/members/${id}`), { name });
-      return { removed: false };
-    },
-    async removeMember(id, itemIds) {
-      const u = { [`members/${id}`]: null, [`removed/${id}`]: true };
-      itemIds.forEach(i => u[`items/${i}/checks/${id}`] = null);
-      await update(ref(db, root), u);
-    },
-    setCheck: (iid, id, v) => v ? set(ref(db, `${root}/items/${iid}/checks/${id}`), true) : remove(ref(db, `${root}/items/${iid}/checks/${id}`)),
-    addItem: (iid, o) => set(ref(db, `${root}/items/${iid}`), o),
-    delItem: iid => remove(ref(db, `${root}/items/${iid}`)),
-    addSection: (sid, o) => set(ref(db, `${root}/sections/${sid}`), o),
-    delSection: async (sid, itemIds) => { const u = { [`sections/${sid}`]: null }; itemIds.forEach(i => u[`items/${i}`] = null); await update(ref(db, root), u); },
-  };
-} else {
-  const key = "keta-demo-" + listId;
-  const read = () => JSON.parse(localStorage.getItem(key) || "{}");
-  const write = d => { localStorage.setItem(key, JSON.stringify(d)); fire(); };
-  let cb = () => {}; const fire = () => cb(read());
-  addEventListener("storage", e => { if (e.key === key) fire(); });
-  store = {
-    sub(f) { cb = f; fire(); },
-    async init(id, name) {
-      let d = read();
-      if (!d.sections) d = { ...d, ...seedData(), owner: id };
-      if (d.removed && d.removed[id]) return { removed: true };
-      if (!d.owner && d.members && d.members[id]) d.owner = id;
-      (d.members ||= {})[id] = { name }; write(d);
-      return { removed: false };
-    },
-    async removeMember(id, itemIds) {
-      const d = read(); delete (d.members || {})[id]; (d.removed ||= {})[id] = true;
-      itemIds.forEach(i => { if (d.items[i] && d.items[i].checks) delete d.items[i].checks[id]; }); write(d);
-    },
-    setCheck: (iid, id, v) => { const d = read(); const it = d.items[iid]; if (!it) return; it.checks ||= {}; v ? it.checks[id] = true : delete it.checks[id]; write(d); },
-    addItem: (iid, o) => { const d = read(); (d.items ||= {})[iid] = o; write(d); },
-    delItem: iid => { const d = read(); delete d.items[iid]; write(d); },
-    addSection: (sid, o) => { const d = read(); (d.sections ||= {})[sid] = o; write(d); },
-    delSection: (sid, ids) => { const d = read(); delete d.sections[sid]; ids.forEach(i => delete d.items[i]); write(d); },
-  };
-}
-
-/* ---------- UI ---------- */
-const $ = id => document.getElementById(id);
-let state = {}; const drafts = {};
-$("banner").innerHTML = live ? "" : '<div class="banner"><b>Demo mode.</b> Changes stay in this browser only. Add your Firebase details to <code>config.js</code> to share the list (see README).</div>';
-$("link").value = location.href;
-$("copy").onclick = async () => { try { await navigator.clipboard.writeText(location.href); $("copy").textContent = "Copied ✓"; } catch { $("link").select(); } setTimeout(() => $("copy").textContent = "Copy link", 1500); };
-
-$("mine").onclick = async () => {
-  const u = new URL(location.href); u.searchParams.set("me", uid); u.searchParams.set("n", localStorage.getItem(nameKey) || "");
-  try { await navigator.clipboard.writeText(u.toString()); $("mine").textContent = "Copied ✓"; } catch { prompt("Copy this link:", u.toString()); }
-  setTimeout(() => $("mine").textContent = "Copy my personal link", 1500);
-};
-
-const COLORS = ["var(--me)", "var(--other)", "#8e5bd6", "#c2476b", "#2f8f5b"];
-function members() {
-  const m = state.members || {};
-  const ids = Object.keys(m).sort((a, b) => (a === uid ? -1 : b === uid ? 1 : m[a].name.localeCompare(m[b].name)));
-  return ids.map(id => ({ id, name: m[id].name }));
-}
-
-function render() {
-  if (state.removed && state.removed[uid]) { showRemoved(); return; }
-  const focusId = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.draft : null;
-  const mem = members();
-  const items = Object.entries(state.items || {}).map(([id, v]) => ({ id, ...v }));
-  const secs = Object.entries(state.sections || {}).map(([id, v]) => ({ id, ...v })).sort((a, b) => a.order - b.order);
-
-  // progress
-  const ppl = $("people"); ppl.textContent = "";
-  mem.forEach((p, i) => {
-    const done = items.filter(it => it.checks && it.checks[p.id]).length;
-    const d = document.createElement("div"); d.className = "person";
-    d.style.setProperty("--c", p.id === uid ? "var(--me)" : COLORS[(i % (COLORS.length - 1)) + 1]);
-    const b = document.createElement("b"); b.textContent = p.name + (p.id === uid ? " (you)" : "");
-    const bar = document.createElement("div"); bar.className = "bar"; const fill = document.createElement("i");
-    fill.style.width = items.length ? (100 * done / items.length) + "%" : "0"; bar.append(fill);
-    const pc = document.createElement("div"); pc.className = "pc"; pc.textContent = `${done} of ${items.length} packed`;
-    if (state.owner === uid && p.id !== uid) {
-      const rm = document.createElement("button"); rm.className = "x"; rm.title = `Remove ${p.name}`; rm.textContent = "✕";
-      rm.onclick = () => { if (confirm(`Remove ${p.name} from the list? Their ticks are deleted and they can't rejoin from their device.`)) store.removeMember(p.id, items.map(i => i.id)); };
-      b.append(" ", rm);
-    }
-    d.append(b, bar, pc); ppl.append(d);
-  });
-
-  // sections
-  const host = $("sections"); host.textContent = "";
-  secs.forEach(s => {
-    const card = document.createElement("div"); card.className = "card sec";
-    const h = document.createElement("h2"); const sp = document.createElement("span"); sp.textContent = s.name;
-    const del = document.createElement("button"); del.className = "x"; del.title = "Remove section"; del.textContent = "🗑";
-    del.onclick = () => { const mine = items.filter(i => i.section === s.id); if (confirm(`Remove "${s.name}"${mine.length ? ` and its ${mine.length} items` : ""} for everyone?`)) store.delSection(s.id, mine.map(i => i.id)); };
-    h.append(sp, del); card.append(h);
-
-    items.filter(it => it.section === s.id).sort((a, b) => a.order - b.order).forEach(it => {
-      const row = document.createElement("div"); row.className = "item";
-      if (mem.length && mem.every(p => it.checks && it.checks[p.id])) row.classList.add("alldone");
-      const t = document.createElement("div"); t.className = "t"; t.textContent = it.text; row.append(t);
-      mem.forEach((p, i) => {
-        const w = document.createElement("label"); w.className = "cb" + (p.id === uid ? " me" : "");
-        const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!(it.checks && it.checks[p.id]);
-        cb.setAttribute("aria-label", `${p.name}: ${it.text}`);
-        if (p.id === uid) cb.onchange = () => store.setCheck(it.id, uid, cb.checked); else cb.disabled = true;
-        const sm = document.createElement("small"); sm.textContent = p.id === uid ? "You" : p.name;
-        w.append(cb, sm); row.append(w);
-      });
-      const x = document.createElement("button"); x.className = "x"; x.title = "Remove item"; x.textContent = "✕";
-      x.onclick = () => store.delItem(it.id); row.append(x);
-      card.append(row);
-    });
-
-    const add = document.createElement("div"); add.className = "add";
-    const inp = document.createElement("input"); inp.type = "text"; inp.placeholder = "Add an item…"; inp.dataset.draft = s.id; inp.value = drafts[s.id] || "";
-    inp.oninput = () => drafts[s.id] = inp.value;
-    const go = () => { const v = inp.value.trim(); if (!v) return; const n = Math.max(0, ...items.filter(i => i.section === s.id).map(i => i.order)) + 1; drafts[s.id] = ""; inp.value = ""; store.addItem(newId("i"), { text: v, section: s.id, order: Date.now() }); };
-    inp.onkeydown = e => { if (e.key === "Enter") go(); };
-    const btn = document.createElement("button"); btn.textContent = "Add"; btn.onclick = go;
-    add.append(inp, btn); card.append(add); host.append(card);
-  });
-  if (focusId) { const el = host.querySelector(`[data-draft="${focusId}"]`); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
-}
-
-$("addsec").onclick = () => { const v = $("newsec").value.trim(); if (!v) return; $("newsec").value = ""; store.addSection(newId("s"), { name: v, order: Date.now() }); };
-$("newsec").onkeydown = e => { if (e.key === "Enter") $("addsec").click(); };
-
-function showRemoved() {
-  document.querySelector(".wrap").innerHTML = '<h1>🌴 Keta Packing List</h1><div class="card"><b>You were removed from this list.</b><p class="hint">Ask the person who shared it with you if this was a mistake.</p></div>';
-}
-
-/* ---------- start ---------- */
-async function start() {
-  let name = localStorage.getItem(nameKey);
-  if (!name) {
-    const dlg = $("nameDlg"); dlg.showModal();
-    await new Promise(res => $("nameForm").addEventListener("submit", () => res()));
-    name = $("nameInput").value.trim() || "Guest"; localStorage.setItem(nameKey, name);
-  }
-  store.sub(s => { state = s; render(); });
-  const r = await store.init(uid, name);
-  if (r.removed) showRemoved();
-}
-start();
-</script>
-</body>
-</html>
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Keta Packing List</title>
-<style>
-:root{--bg:#f7f5f0;--card:#fff;--ink:#1d2a3a;--mute:#6b7685;--line:#e4e0d6;--accent:#1f6f8b;--me:#1f6f8b;--other:#d9822b;--ok:#2f8f5b}
-@media (prefers-color-scheme:dark){:root{--bg:#12171d;--card:#1a212a;--ink:#e8ecf1;--mute:#93a0b0;--line:#2a3340;--accent:#5ab4d1;--me:#5ab4d1;--other:#f0a35a;--ok:#5fc08a}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-.wrap{max-width:760px;margin:0 auto;padding:16px}
-h1{font-size:1.5rem;margin:8px 0 2px}
-.sub{color:var(--mute);margin:0 0 14px;font-size:.92rem}
-.banner{background:#fff4d6;color:#5a4300;border:1px solid #ecd48a;border-radius:10px;padding:10px 12px;font-size:.88rem;margin-bottom:12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:14px}
-.people{display:flex;flex-wrap:wrap;gap:10px}
-.person{flex:1 1 150px}
-.person b{font-size:.9rem}
-.bar{height:8px;background:var(--line);border-radius:6px;overflow:hidden;margin-top:4px}
-.bar i{display:block;height:100%;background:var(--c,var(--accent));width:0;transition:width .25s}
-.pc{font-size:.78rem;color:var(--mute)}
-.share{display:flex;gap:8px;margin-top:10px}
-.share input{flex:1;min-width:0}
-input[type=text]{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
-button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:8px 12px}
-button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-.sec h2{font-size:1.05rem;margin:0 0 6px;display:flex;align-items:center;gap:8px}
-.sec h2 span{flex:1}
-.x{border:0;background:none;color:var(--mute);padding:2px 8px;font-size:1.1rem}
-.item{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line)}
-.item:first-of-type{border-top:0}
-.item .t{flex:1;min-width:0;word-break:break-word}
-.item.alldone .t{color:var(--mute);text-decoration:line-through}
-.cb{display:flex;flex-direction:column;align-items:center;gap:1px;min-width:44px}
-.cb small{font-size:.62rem;color:var(--mute);max-width:56px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cb input{width:22px;height:22px;margin:0;accent-color:var(--other)}
-.cb.me input{accent-color:var(--me)}
-.cb input:disabled{opacity:.9}
-.add{display:flex;gap:8px;margin-top:8px}
-.add input{flex:1;min-width:0}
-.newsec{display:flex;gap:8px}
-.newsec input{flex:1;min-width:0}
-.hint{color:var(--mute);font-size:.82rem}
-dialog{border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);max-width:340px}
-dialog form{display:flex;flex-direction:column;gap:10px}
-</style>
-</head>
-<body>
-<div class="wrap">
-  <h1>🌴 Keta Packing List</h1>
-  <p class="sub">Tick your own box. Everyone else's ticks show up live beside it.</p>
-  <div id="banner"></div>
-  <div class="card">
-    <div class="people" id="people"></div>
-    <div class="share">
-      <input type="text" id="link" readonly aria-label="Share link">
-      <button id="copy">Copy link</button>
+<dialog id="askDlg">
+  <form method="dialog">
+    <b id="askMsg"></b>
+    <div class="choices">
+      <button value="all" class="primary" id="askAll"></button>
+      <button value="me" id="askMe"></button>
+      <button value="cancel">Cancel</button>
     </div>
-    <p class="hint" style="margin:8px 0 0">Send this link to your friend. Anyone with it can edit the list.</p>
-    <p class="hint" style="margin:10px 0 0"><button id="mine">Copy my personal link</button> Open it on your other devices to stay the same person. Keep it private: whoever opens it becomes you.</p>
-  </div>
-  <div id="sections"></div>
-  <div class="card newsec">
-    <input type="text" id="newsec" placeholder="New section (e.g. Beach gear)">
-    <button id="addsec" class="primary">Add section</button>
-  </div>
-</div>
-
-<dialog id="nameDlg">
-  <form method="dialog" id="nameForm">
-    <b>What's your name?</b>
-    <input type="text" id="nameInput" maxlength="20" placeholder="e.g. Gray" required autocomplete="given-name">
-    <button class="primary">Join the list</button>
   </form>
 </dialog>
 
-<script type="module">
-import { FIREBASE_CONFIG } from "./config.js";
-
-/* ---------- list id (from URL, ?list=...) ---------- */
-const params = new URLSearchParams(location.search);
-let listId = params.get("list");
-if (!listId) {
-  listId = "keta-" + Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 6);
-  params.set("list", listId);
-  history.replaceState(null, "", "?" + params.toString());
-}
-
-/* ---------- identity (per browser) ---------- */
-const uidKey = "keta-uid", nameKey = "keta-name";
-// Personal link: carries your identity to another device
-if (params.get("me")) {
-  localStorage.setItem(uidKey, params.get("me"));
-  if (params.get("n")) localStorage.setItem(nameKey, params.get("n"));
-  params.delete("me"); params.delete("n");
-  history.replaceState(null, "", "?" + params.toString());
-}
-let uid = localStorage.getItem(uidKey);
-if (!uid) { uid = "u" + Math.random().toString(36).slice(2, 10); localStorage.setItem(uidKey, uid); }
-
-/* ---------- starter list ---------- */
-const SEED = [
-  ["Clothes", ["Lightweight cotton t-shirts / tops (5–7)","Shorts & casuals (3–4)","Light trousers / linen pants (2)","Swimwear","Underwear & socks (14-day supply)","Comfortable walking shoes / sneakers","Sandals / flip-flops/Slides","Light jacket / windbreaker / cardigan","Wide-brim hat / sun cap"]],
-  ["Toiletries", ["Toothbrush, toothpaste","Insect repellent (mosquito spray/cream)","Deodorant & fragrance","Hairbrush / comb & hair ties","Razor & shaving cream","Quick-dry travel towel","Personal hygiene & sanitary products"]],
-  ["Electronics", ["Smartphone & high-capacity power bank","Device chargers & charging cables","Universal travel adapter / extension strip","Headphones / earbuds"]],
-  ["Health", ["Personal prescription medications","Basic first aid kit (bandages, antiseptic wipes)","Pain relievers & anti-inflammatory meds","Anti-diarrheal medication & rehydration salts","Hand sanitizer & wet wipes"]],
-  ["Sleeping", ["Light travel sheet liner / blanket"]],
-  ["Other essentials", ["National ID & driver's license","Cash & payment cards (MOMO)","Water bottle","Daypack / beach bag (Duffle bag)","Sunglasses (UV protection)","Dry bag / waterproof pouch for electronics","Travel laundry detergent bag"]],
-  ["Food: Dry staples & grains", ["Rice (perfumed or local, 2–5 kg)","Gari (1–2 kg)","Spaghetti / Macaroni (3–4 packs)","Instant noodles (1 pack / carton)","Tom brown (for breakfast)"]],
-  ["Food: Proteins & canned goods (optional)", ["Canned sardine / mackerel / tuna (6–10 cans)","Canned corned beef (2–3 cans)","Baked beans / sweetcorn (3–4 cans)","Eggs (1 crate, packed securely)"]],
-  ["Food: Cooking oil, condiments & spices", ["Vegetable oil (1–2 liters)","Tomato paste / puree (tin or sachet pack)","Onions, garlic & ginger","Seasoning cubes / powder & salt","Shito (black pepper sauce, 1–2 jars)"]],
-  ["Food: Breakfast & snacks", ["Powdered milk (sachets or tin)","Sugar / honey","Coffee / tea bags / cocoa powder","Biscuits, crackers & nuts"]],
-  ["Food: Water & beverages", ["Bottled and Sachet water (starter pack, 1–2 cartons)"]],
-];
-function seedData() {
-  const sections = {}, items = {}; let n = 0;
-  SEED.forEach(([name, list], si) => {
-    const sid = "s" + String(si).padStart(2, "0");
-    sections[sid] = { name, order: si };
-    list.forEach((text, ii) => { items["i" + String(++n).padStart(3, "0")] = { text, section: sid, order: n }; });
-  });
-  return { sections, items };
-}
-const newId = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-
-/* ---------- storage: Firebase, or local demo mode ---------- */
-const live = FIREBASE_CONFIG && FIREBASE_CONFIG.databaseURL && !FIREBASE_CONFIG.databaseURL.includes("YOUR-");
-let store;
-if (live) {
-  const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
-  const { getDatabase, ref, onValue, set, update, remove, get } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js");
-  const db = getDatabase(initializeApp(FIREBASE_CONFIG));
-  const root = `lists/${listId}`;
-  store = {
-    sub(cb) { onValue(ref(db, root), s => cb(s.val() || {})); },
-    async init(id, name) {
-      let snap = await get(ref(db, root));
-      let d = snap.val() || {};
-      if (!d.sections) { await update(ref(db, root), { ...seedData(), owner: id }); d = { owner: id }; }
-      if (d.removed && d.removed[id]) return { removed: true };
-      if (!d.owner && d.members && d.members[id]) await set(ref(db, root + "/owner"), id);
-      await set(ref(db, `${root}/members/${id}`), { name });
-      return { removed: false };
-    },
-    async removeMember(id, itemIds) {
-      const u = { [`members/${id}`]: null, [`removed/${id}`]: true };
-      itemIds.forEach(i => u[`items/${i}/checks/${id}`] = null);
-      await update(ref(db, root), u);
-    },
-    setCheck: (iid, id, v) => v ? set(ref(db, `${root}/items/${iid}/checks/${id}`), true) : remove(ref(db, `${root}/items/${iid}/checks/${id}`)),
-    addItem: (iid, o) => set(ref(db, `${root}/items/${iid}`), o),
-    delItem: iid => remove(ref(db, `${root}/items/${iid}`)),
-    addSection: (sid, o) => set(ref(db, `${root}/sections/${sid}`), o),
-    delSection: async (sid, itemIds) => { const u = { [`sections/${sid}`]: null }; itemIds.forEach(i => u[`items/${i}`] = null); await update(ref(db, root), u); },
-  };
-} else {
-  const key = "keta-demo-" + listId;
-  const read = () => JSON.parse(localStorage.getItem(key) || "{}");
-  const write = d => { localStorage.setItem(key, JSON.stringify(d)); fire(); };
-  let cb = () => {}; const fire = () => cb(read());
-  addEventListener("storage", e => { if (e.key === key) fire(); });
-  store = {
-    sub(f) { cb = f; fire(); },
-    async init(id, name) {
-      let d = read();
-      if (!d.sections) d = { ...d, ...seedData(), owner: id };
-      if (d.removed && d.removed[id]) return { removed: true };
-      if (!d.owner && d.members && d.members[id]) d.owner = id;
-      (d.members ||= {})[id] = { name }; write(d);
-      return { removed: false };
-    },
-    async removeMember(id, itemIds) {
-      const d = read(); delete (d.members || {})[id]; (d.removed ||= {})[id] = true;
-      itemIds.forEach(i => { if (d.items[i] && d.items[i].checks) delete d.items[i].checks[id]; }); write(d);
-    },
-    setCheck: (iid, id, v) => { const d = read(); const it = d.items[iid]; if (!it) return; it.checks ||= {}; v ? it.checks[id] = true : delete it.checks[id]; write(d); },
-    addItem: (iid, o) => { const d = read(); (d.items ||= {})[iid] = o; write(d); },
-    delItem: iid => { const d = read(); delete d.items[iid]; write(d); },
-    addSection: (sid, o) => { const d = read(); (d.sections ||= {})[sid] = o; write(d); },
-    delSection: (sid, ids) => { const d = read(); delete d.sections[sid]; ids.forEach(i => delete d.items[i]); write(d); },
-  };
-}
-
-/* ---------- UI ---------- */
-const $ = id => document.getElementById(id);
-let state = {}; const drafts = {};
-$("banner").innerHTML = live ? "" : '<div class="banner"><b>Demo mode.</b> Changes stay in this browser only. Add your Firebase details to <code>config.js</code> to share the list (see README).</div>';
-$("link").value = location.href;
-$("copy").onclick = async () => { try { await navigator.clipboard.writeText(location.href); $("copy").textContent = "Copied ✓"; } catch { $("link").select(); } setTimeout(() => $("copy").textContent = "Copy link", 1500); };
-
-$("mine").onclick = async () => {
-  const u = new URL(location.href); u.searchParams.set("me", uid); u.searchParams.set("n", localStorage.getItem(nameKey) || "");
-  try { await navigator.clipboard.writeText(u.toString()); $("mine").textContent = "Copied ✓"; } catch { prompt("Copy this link:", u.toString()); }
-  setTimeout(() => $("mine").textContent = "Copy my personal link", 1500);
-};
-
-const COLORS = ["var(--me)", "var(--other)", "#8e5bd6", "#c2476b", "#2f8f5b"];
-function members() {
-  const m = state.members || {};
-  const ids = Object.keys(m).sort((a, b) => (a === uid ? -1 : b === uid ? 1 : m[a].name.localeCompare(m[b].name)));
-  return ids.map(id => ({ id, name: m[id].name }));
-}
-
-function render() {
-  if (state.removed && state.removed[uid]) { showRemoved(); return; }
-  const focusId = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.draft : null;
-  const mem = members();
-  const items = Object.entries(state.items || {}).map(([id, v]) => ({ id, ...v }));
-  const secs = Object.entries(state.sections || {}).map(([id, v]) => ({ id, ...v })).sort((a, b) => a.order - b.order);
-
-  // progress
-  const ppl = $("people"); ppl.textContent = "";
-  mem.forEach((p, i) => {
-    const done = items.filter(it => it.checks && it.checks[p.id]).length;
-    const d = document.createElement("div"); d.className = "person";
-    d.style.setProperty("--c", p.id === uid ? "var(--me)" : COLORS[(i % (COLORS.length - 1)) + 1]);
-    const b = document.createElement("b"); b.textContent = p.name + (p.id === uid ? " (you)" : "");
-    const bar = document.createElement("div"); bar.className = "bar"; const fill = document.createElement("i");
-    fill.style.width = items.length ? (100 * done / items.length) + "%" : "0"; bar.append(fill);
-    const pc = document.createElement("div"); pc.className = "pc"; pc.textContent = `${done} of ${items.length} packed`;
-    if (state.owner === uid && p.id !== uid) {
-      const rm = document.createElement("button"); rm.className = "x"; rm.title = `Remove ${p.name}`; rm.textContent = "✕";
-      rm.onclick = () => { if (confirm(`Remove ${p.name} from the list? Their ticks are deleted and they can't rejoin from their device.`)) store.removeMember(p.id, items.map(i => i.id)); };
-      b.append(" ", rm);
-    }
-    d.append(b, bar, pc); ppl.append(d);
-  });
-
-  // sections
-  const host = $("sections"); host.textContent = "";
-  secs.forEach(s => {
-    const card = document.createElement("div"); card.className = "card sec";
-    const h = document.createElement("h2"); const sp = document.createElement("span"); sp.textContent = s.name;
-    const del = document.createElement("button"); del.className = "x"; del.title = "Remove section"; del.textContent = "🗑";
-    del.onclick = () => { const mine = items.filter(i => i.section === s.id); if (confirm(`Remove "${s.name}"${mine.length ? ` and its ${mine.length} items` : ""} for everyone?`)) store.delSection(s.id, mine.map(i => i.id)); };
-    h.append(sp, del); card.append(h);
-
-    items.filter(it => it.section === s.id).sort((a, b) => a.order - b.order).forEach(it => {
-      const row = document.createElement("div"); row.className = "item";
-      if (mem.length && mem.every(p => it.checks && it.checks[p.id])) row.classList.add("alldone");
-      const t = document.createElement("div"); t.className = "t"; t.textContent = it.text; row.append(t);
-      mem.forEach((p, i) => {
-        const w = document.createElement("label"); w.className = "cb" + (p.id === uid ? " me" : "");
-        const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!(it.checks && it.checks[p.id]);
-        cb.setAttribute("aria-label", `${p.name}: ${it.text}`);
-        if (p.id === uid) cb.onchange = () => store.setCheck(it.id, uid, cb.checked); else cb.disabled = true;
-        const sm = document.createElement("small"); sm.textContent = p.id === uid ? "You" : p.name;
-        w.append(cb, sm); row.append(w);
-      });
-      const x = document.createElement("button"); x.className = "x"; x.title = "Remove item"; x.textContent = "✕";
-      x.onclick = () => store.delItem(it.id); row.append(x);
-      card.append(row);
-    });
-
-    const add = document.createElement("div"); add.className = "add";
-    const inp = document.createElement("input"); inp.type = "text"; inp.placeholder = "Add an item…"; inp.dataset.draft = s.id; inp.value = drafts[s.id] || "";
-    inp.oninput = () => drafts[s.id] = inp.value;
-    const go = () => { const v = inp.value.trim(); if (!v) return; const n = Math.max(0, ...items.filter(i => i.section === s.id).map(i => i.order)) + 1; drafts[s.id] = ""; inp.value = ""; store.addItem(newId("i"), { text: v, section: s.id, order: Date.now() }); };
-    inp.onkeydown = e => { if (e.key === "Enter") go(); };
-    const btn = document.createElement("button"); btn.textContent = "Add"; btn.onclick = go;
-    add.append(inp, btn); card.append(add); host.append(card);
-  });
-  if (focusId) { const el = host.querySelector(`[data-draft="${focusId}"]`); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
-}
-
-$("addsec").onclick = () => { const v = $("newsec").value.trim(); if (!v) return; $("newsec").value = ""; store.addSection(newId("s"), { name: v, order: Date.now() }); };
-$("newsec").onkeydown = e => { if (e.key === "Enter") $("addsec").click(); };
-
-function showRemoved() {
-  document.querySelector(".wrap").innerHTML = '<h1>🌴 Keta Packing List</h1><div class="card"><b>You were removed from this list.</b><p class="hint">Ask the person who shared it with you if this was a mistake.</p></div>';
-}
-
-/* ---------- start ---------- */
-async function start() {
-  let name = localStorage.getItem(nameKey);
-  if (!name) {
-    const dlg = $("nameDlg"); dlg.showModal();
-    await new Promise(res => $("nameForm").addEventListener("submit", () => res()));
-    name = $("nameInput").value.trim() || "Guest"; localStorage.setItem(nameKey, name);
-  }
-  store.sub(s => { state = s; render(); });
-  const r = await store.init(uid, name);
-  if (r.removed) showRemoved();
-}
-start();
-</script>
-</body>
-</html>
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Keta Packing List</title>
-<style>
-:root{--bg:#f7f5f0;--card:#fff;--ink:#1d2a3a;--mute:#6b7685;--line:#e4e0d6;--accent:#1f6f8b;--me:#1f6f8b;--other:#d9822b;--ok:#2f8f5b}
-@media (prefers-color-scheme:dark){:root{--bg:#12171d;--card:#1a212a;--ink:#e8ecf1;--mute:#93a0b0;--line:#2a3340;--accent:#5ab4d1;--me:#5ab4d1;--other:#f0a35a;--ok:#5fc08a}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-.wrap{max-width:760px;margin:0 auto;padding:16px}
-h1{font-size:1.5rem;margin:8px 0 2px}
-.sub{color:var(--mute);margin:0 0 14px;font-size:.92rem}
-.banner{background:#fff4d6;color:#5a4300;border:1px solid #ecd48a;border-radius:10px;padding:10px 12px;font-size:.88rem;margin-bottom:12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:14px}
-.people{display:flex;flex-wrap:wrap;gap:10px}
-.person{flex:1 1 150px}
-.person b{font-size:.9rem}
-.bar{height:8px;background:var(--line);border-radius:6px;overflow:hidden;margin-top:4px}
-.bar i{display:block;height:100%;background:var(--c,var(--accent));width:0;transition:width .25s}
-.pc{font-size:.78rem;color:var(--mute)}
-.share{display:flex;gap:8px;margin-top:10px}
-.share input{flex:1;min-width:0}
-input[type=text]{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
-button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:8px 12px}
-button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-.sec h2{font-size:1.05rem;margin:0 0 6px;display:flex;align-items:center;gap:8px}
-.sec h2 span{flex:1}
-.x{border:0;background:none;color:var(--mute);padding:2px 8px;font-size:1.1rem}
-.item{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line)}
-.item:first-of-type{border-top:0}
-.item .t{flex:1;min-width:0;word-break:break-word}
-.item.alldone .t{color:var(--mute);text-decoration:line-through}
-.cb{display:flex;flex-direction:column;align-items:center;gap:1px;min-width:44px}
-.cb small{font-size:.62rem;color:var(--mute);max-width:56px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cb input{width:22px;height:22px;margin:0;accent-color:var(--other)}
-.cb.me input{accent-color:var(--me)}
-.cb input:disabled{opacity:.9}
-.add{display:flex;gap:8px;margin-top:8px}
-.add input{flex:1;min-width:0}
-.newsec{display:flex;gap:8px}
-.newsec input{flex:1;min-width:0}
-.hint{color:var(--mute);font-size:.82rem}
-dialog{border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);max-width:340px}
-dialog form{display:flex;flex-direction:column;gap:10px}
-</style>
-</head>
-<body>
-<div class="wrap">
-  <h1>🌴 Keta Packing List</h1>
-  <p class="sub">Tick your own box. Everyone else's ticks show up live beside it.</p>
-  <div id="banner"></div>
-  <div class="card">
-    <div class="people" id="people"></div>
-    <div class="share">
-      <input type="text" id="link" readonly aria-label="Share link">
-      <button id="copy">Copy link</button>
+<dialog id="pledgeDlg">
+  <div style="display:flex;flex-direction:column;gap:8px">
+    <b id="pdTitle"></b>
+    <div class="hint" id="pdInfo"></div>
+    <div id="pdFood">
+      <label class="opt"><input type="radio" name="pm" value="people" checked> I can bring enough to feed <input type="number" id="pdP" min="1" max="15" value="1"> people for <input type="number" id="pdD" min="1" max="14" value="1"> days</label>
+      <label class="opt"><input type="radio" name="pm" value="all"> I can bring enough for everyone</label>
     </div>
-    <p class="hint" style="margin:8px 0 0">Send this link to your friend. Anyone with it can edit the list.</p>
-    <p class="hint" style="margin:10px 0 0"><button id="mine">Copy my personal link</button> Open it on your other devices to stay the same person. Keep it private: whoever opens it becomes you.</p>
+    <div id="pdCount"><label>I'll bring <input type="number" id="pdN" min="1" max="999" value="1"> cans / tins</label></div>
+    <div class="err" id="pdErr"></div>
+    <div class="row"><button type="button" class="primary" id="pdSave">Save</button><button type="button" id="pdRemove">Remove my pledge</button><button type="button" id="pdCancel">Cancel</button></div>
   </div>
-  <div id="sections"></div>
-  <div class="card newsec">
-    <input type="text" id="newsec" placeholder="New section (e.g. Beach gear)">
-    <button id="addsec" class="primary">Add section</button>
+</dialog>
+
+<dialog id="accessDlg">
+  <div style="display:flex;flex-direction:column;gap:8px">
+    <b id="acTitle"></b>
+    <div class="hint">Food and kitchen lists are visible to everyone. Tick the other lists this person may see.</div>
+    <div id="acList"></div>
+    <div class="row"><button type="button" class="primary" id="acSave">Save</button><button type="button" id="acCancel">Cancel</button></div>
   </div>
-</div>
+</dialog>
 
 <dialog id="nameDlg">
   <form method="dialog" id="nameForm">
@@ -656,210 +134,559 @@ dialog form{display:flex;flex-direction:column;gap:10px}
 <script type="module">
 import { FIREBASE_CONFIG } from "./config.js";
 
-/* ---------- list id (from URL, ?list=...) ---------- */
+/* ================= list id + identity ================= */
 const params = new URLSearchParams(location.search);
 let listId = params.get("list");
 if (!listId) {
   listId = "keta-" + Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 6);
-  params.set("list", listId);
-  history.replaceState(null, "", "?" + params.toString());
 }
-
-/* ---------- identity (per browser) ---------- */
 const uidKey = "keta-uid", nameKey = "keta-name";
-// Personal link: carries your identity to another device
+const adminKey = "keta-admin-" + listId, adminAtKey = "keta-adminAt-" + listId, copiedKey = "keta-copied-" + listId;
+
+// A personal link carries: me (identity), n (name), k (admin code, admin only), a (granted lists)
+let linkAccess = null;
 if (params.get("me")) {
   localStorage.setItem(uidKey, params.get("me"));
   if (params.get("n")) localStorage.setItem(nameKey, params.get("n"));
-  params.delete("me"); params.delete("n");
-  history.replaceState(null, "", "?" + params.toString());
+  if (params.get("k")) localStorage.setItem(adminKey, params.get("k"));
+  if (params.get("a")) { linkAccess = {}; params.get("a").split(",").filter(Boolean).forEach(x => linkAccess[x] = true); }
+  params.delete("me"); params.delete("n"); params.delete("k"); params.delete("a");
 }
+params.set("list", listId);
+history.replaceState(null, "", "?" + params.toString());
 let uid = localStorage.getItem(uidKey);
 if (!uid) { uid = "u" + Math.random().toString(36).slice(2, 10); localStorage.setItem(uidKey, uid); }
+const shareUrl = () => location.origin + location.pathname + "?list=" + encodeURIComponent(listId);
 
-/* ---------- starter list ---------- */
+async function sha256(s) {
+  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
+}
+const newCode = () => [...crypto.getRandomValues(new Uint8Array(16))].map(x => (x % 36).toString(36)).join("");
+
+/* ================= starter list ================= */
+const FOOD_PEOPLE = 15, FOOD_DAYS = 14, FOOD_CAP = FOOD_PEOPLE * FOOD_DAYS;
 const SEED = [
-  ["Clothes", ["Lightweight cotton t-shirts / tops (5–7)","Shorts & casuals (3–4)","Light trousers / linen pants (2)","Swimwear","Underwear & socks (14-day supply)","Comfortable walking shoes / sneakers","Sandals / flip-flops/Slides","Light jacket / windbreaker / cardigan","Wide-brim hat / sun cap"]],
-  ["Toiletries", ["Toothbrush, toothpaste","Insect repellent (mosquito spray/cream)","Deodorant & fragrance","Hairbrush / comb & hair ties","Razor & shaving cream","Quick-dry travel towel","Personal hygiene & sanitary products"]],
-  ["Electronics", ["Smartphone & high-capacity power bank","Device chargers & charging cables","Universal travel adapter / extension strip","Headphones / earbuds"]],
-  ["Health", ["Personal prescription medications","Basic first aid kit (bandages, antiseptic wipes)","Pain relievers & anti-inflammatory meds","Anti-diarrheal medication & rehydration salts","Hand sanitizer & wet wipes"]],
-  ["Sleeping", ["Light travel sheet liner / blanket"]],
-  ["Other essentials", ["National ID & driver's license","Cash & payment cards (MOMO)","Water bottle","Daypack / beach bag (Duffle bag)","Sunglasses (UV protection)","Dry bag / waterproof pouch for electronics","Travel laundry detergent bag"]],
-  ["Food: Dry staples & grains", ["Rice (perfumed or local, 2–5 kg)","Gari (1–2 kg)","Spaghetti / Macaroni (3–4 packs)","Instant noodles (1 pack / carton)","Tom brown (for breakfast)"]],
-  ["Food: Proteins & canned goods (optional)", ["Canned sardine / mackerel / tuna (6–10 cans)","Canned corned beef (2–3 cans)","Baked beans / sweetcorn (3–4 cans)","Eggs (1 crate, packed securely)"]],
-  ["Food: Cooking oil, condiments & spices", ["Vegetable oil (1–2 liters)","Tomato paste / puree (tin or sachet pack)","Onions, garlic & ginger","Seasoning cubes / powder & salt","Shito (black pepper sauce, 1–2 jars)"]],
-  ["Food: Breakfast & snacks", ["Powdered milk (sachets or tin)","Sugar / honey","Coffee / tea bags / cocoa powder","Biscuits, crackers & nuts"]],
-  ["Food: Water & beverages", ["Bottled and Sachet water (starter pack, 1–2 cartons)"]],
+  ["Clothes", "personal", ["Lightweight cotton t-shirts / tops (5–7)","Shorts & casuals (3–4)","Light trousers / linen pants (2)","Swimwear","Underwear & socks (14-day supply)","Comfortable walking shoes / sneakers","Sandals / flip-flops/Slides","Light jacket / windbreaker / cardigan","Wide-brim hat / sun cap"]],
+  ["Toiletries", "personal", ["Toothbrush, toothpaste","Insect repellent (mosquito spray/cream)","Deodorant & fragrance","Hairbrush / comb & hair ties","Razor & shaving cream","Quick-dry travel towel","Personal hygiene & sanitary products"]],
+  ["Electronics", "personal", ["Smartphone & high-capacity power bank","Device chargers & charging cables","Universal travel adapter / extension strip","Headphones / earbuds"]],
+  ["Health", "personal", ["Personal prescription medications","Basic first aid kit (bandages, antiseptic wipes)","Pain relievers & anti-inflammatory meds","Anti-diarrheal medication & rehydration salts","Hand sanitizer & wet wipes"]],
+  ["Sleeping", "personal", ["Light travel sheet liner / blanket"]],
+  ["Other essentials", "personal", ["National ID & driver's license","Cash & payment cards (MOMO)","Water bottle","Daypack / beach bag (Duffle bag)","Sunglasses (UV protection)","Dry bag / waterproof pouch for electronics","Travel laundry detergent bag"]],
+  ["Food: Dry staples & grains", "food", ["Rice (perfumed or local, 2–5 kg)","Gari (1–2 kg)","Spaghetti / Macaroni (3–4 packs)","Instant noodles (1 pack / carton)","Tom brown (for breakfast)"]],
+  ["Food: Proteins & canned goods (optional)", "food", ["Canned sardine / mackerel / tuna (6–10 cans)","Canned corned beef (2–3 cans)","Baked beans / sweetcorn (3–4 cans)","Eggs (1 crate, packed securely)"]],
+  ["Food: Cooking oil, condiments & spices", "food", ["Vegetable oil (1–2 liters)","Tomato paste / puree (tin or sachet pack)","Onions, garlic & ginger","Seasoning cubes / powder & salt","Shito (black pepper sauce, 1–2 jars)"]],
+  ["Food: Breakfast & snacks", "food", ["Powdered milk (sachets or tin)","Sugar / honey","Coffee / tea bags / cocoa powder","Biscuits, crackers & nuts"]],
+  ["Food: Water & beverages", "food", ["Bottled and Sachet water (starter pack, 1–2 cartons)"]],
 ];
-function seedData() {
+// [name, items as [text, maxPeople]] (no number = anyone can take it)
+const GEAR = [
+  ["Kitchen: Cooking equipment", [["Gas cylinder", 1], ["Sauce pans", 2], ["Frying pans", 2], ["Blender", 1]]],
+  ["Kitchen: Utensils & prep", [["Chopping board", 2], ["Knives", 2], ["Spatula", 2], ["Ladle", 1], ["Perforated spoon", 1], ["Colander", 1]]],
+  ["Kitchen: Dishes & serving", [["Plates"], ["Plastic bowls"], ["Earthenware bowl", 1], ["Bowls for washing dishes", 2], ["Personal spoons or plastic spoons"]]],
+  ["Household & cleaning", [["Electric iron", 1], ["Buckets", 2], ["Kitchen towels", 2]]],
+];
+function baseSeed() {
   const sections = {}, items = {}; let n = 0;
-  SEED.forEach(([name, list], si) => {
+  SEED.forEach(([name, kind, list], si) => {
     const sid = "s" + String(si).padStart(2, "0");
-    sections[sid] = { name, order: si };
-    list.forEach((text, ii) => { items["i" + String(++n).padStart(3, "0")] = { text, section: sid, order: n }; });
+    sections[sid] = { name, order: si, kind, public: kind === "food" };
+    list.forEach(text => { items["i" + String(++n).padStart(3, "0")] = { text, section: sid, order: n }; });
+  });
+  return { sections, items };
+}
+function gearSeed() {
+  const sections = {}, items = {}; let n = 0;
+  GEAR.forEach(([name, list], gi) => {
+    const sid = "k" + String(gi + 1).padStart(2, "0");
+    sections[sid] = { name, order: 11 + gi, kind: "gear", public: true };
+    list.forEach(([text, slots]) => { const it = { text, section: sid, order: ++n }; if (slots) it.slots = slots; items["g" + String(n).padStart(2, "0")] = it; });
   });
   return { sections, items };
 }
 const newId = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 
-/* ---------- storage: Firebase, or local demo mode ---------- */
+/* ================= storage backends ================= */
 const live = FIREBASE_CONFIG && FIREBASE_CONFIG.databaseURL && !FIREBASE_CONFIG.databaseURL.includes("YOUR-");
-let store;
+let backend;
+function setPath(obj, path, val) {
+  const k = path.split("/"); let o = obj;
+  for (let i = 0; i < k.length - 1; i++) { if (typeof o[k[i]] !== "object" || o[k[i]] === null) o[k[i]] = {}; o = o[k[i]]; }
+  if (val === null || val === undefined) delete o[k[k.length - 1]]; else o[k[k.length - 1]] = val;
+}
+const getPath = (obj, path) => path.split("/").reduce((o, k) => (o == null ? undefined : o[k]), obj);
 if (live) {
   const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
-  const { getDatabase, ref, onValue, set, update, remove, get } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js");
+  const { getDatabase, ref, onValue, update, get, runTransaction } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js");
   const db = getDatabase(initializeApp(FIREBASE_CONFIG));
   const root = `lists/${listId}`;
-  store = {
-    sub(cb) { onValue(ref(db, root), s => cb(s.val() || {})); },
-    async init(id, name) {
-      let snap = await get(ref(db, root));
-      let d = snap.val() || {};
-      if (!d.sections) { await update(ref(db, root), { ...seedData(), owner: id }); d = { owner: id }; }
-      if (d.removed && d.removed[id]) return { removed: true };
-      if (!d.owner && d.members && d.members[id]) await set(ref(db, root + "/owner"), id);
-      await set(ref(db, `${root}/members/${id}`), { name });
-      return { removed: false };
-    },
-    async removeMember(id, itemIds) {
-      const u = { [`members/${id}`]: null, [`removed/${id}`]: true };
-      itemIds.forEach(i => u[`items/${i}/checks/${id}`] = null);
-      await update(ref(db, root), u);
-    },
-    setCheck: (iid, id, v) => v ? set(ref(db, `${root}/items/${iid}/checks/${id}`), true) : remove(ref(db, `${root}/items/${iid}/checks/${id}`)),
-    addItem: (iid, o) => set(ref(db, `${root}/items/${iid}`), o),
-    delItem: iid => remove(ref(db, `${root}/items/${iid}`)),
-    addSection: (sid, o) => set(ref(db, `${root}/sections/${sid}`), o),
-    delSection: async (sid, itemIds) => { const u = { [`sections/${sid}`]: null }; itemIds.forEach(i => u[`items/${i}`] = null); await update(ref(db, root), u); },
+  backend = {
+    sub: cb => onValue(ref(db, root), s => cb(s.val() || {})),
+    read: async () => (await get(ref(db, root))).val() || {},
+    patch: u => update(ref(db, root), u),
+    tx: async (path, fn) => (await runTransaction(ref(db, `${root}/${path}`), cur => fn(cur === undefined ? null : cur))).committed,
   };
 } else {
   const key = "keta-demo-" + listId;
   const read = () => JSON.parse(localStorage.getItem(key) || "{}");
-  const write = d => { localStorage.setItem(key, JSON.stringify(d)); fire(); };
   let cb = () => {}; const fire = () => cb(read());
+  const write = d => { localStorage.setItem(key, JSON.stringify(d)); fire(); };
   addEventListener("storage", e => { if (e.key === key) fire(); });
-  store = {
-    sub(f) { cb = f; fire(); },
-    async init(id, name) {
-      let d = read();
-      if (!d.sections) d = { ...d, ...seedData(), owner: id };
-      if (d.removed && d.removed[id]) return { removed: true };
-      if (!d.owner && d.members && d.members[id]) d.owner = id;
-      (d.members ||= {})[id] = { name }; write(d);
-      return { removed: false };
-    },
-    async removeMember(id, itemIds) {
-      const d = read(); delete (d.members || {})[id]; (d.removed ||= {})[id] = true;
-      itemIds.forEach(i => { if (d.items[i] && d.items[i].checks) delete d.items[i].checks[id]; }); write(d);
-    },
-    setCheck: (iid, id, v) => { const d = read(); const it = d.items[iid]; if (!it) return; it.checks ||= {}; v ? it.checks[id] = true : delete it.checks[id]; write(d); },
-    addItem: (iid, o) => { const d = read(); (d.items ||= {})[iid] = o; write(d); },
-    delItem: iid => { const d = read(); delete d.items[iid]; write(d); },
-    addSection: (sid, o) => { const d = read(); (d.sections ||= {})[sid] = o; write(d); },
-    delSection: (sid, ids) => { const d = read(); delete d.sections[sid]; ids.forEach(i => delete d.items[i]); write(d); },
+  backend = {
+    sub: f => { cb = f; fire(); },
+    read: async () => read(),
+    patch: async u => { const d = read(); Object.entries(u).forEach(([p, v]) => setPath(d, p, v)); write(d); },
+    tx: async (path, fn) => { const d = read(); const cur = getPath(d, path); const res = fn(cur === undefined ? null : cur); if (res === undefined) return false; setPath(d, path, res); write(d); return true; },
   };
 }
 
-/* ---------- UI ---------- */
-const $ = id => document.getElementById(id);
-let state = {}; const drafts = {};
-$("banner").innerHTML = live ? "" : '<div class="banner"><b>Demo mode.</b> Changes stay in this browser only. Add your Firebase details to <code>config.js</code> to share the list (see README).</div>';
-$("link").value = location.href;
-$("copy").onclick = async () => { try { await navigator.clipboard.writeText(location.href); $("copy").textContent = "Copied ✓"; } catch { $("link").select(); } setTimeout(() => $("copy").textContent = "Copy link", 1500); };
+/* ================= food / slot rules (pure) ================= */
+const isCan = t => /canned|baked beans|tomato paste/i.test(t);
+const kindOf = s => s.kind || (/^Food:/.test(s.name) ? "food" : "personal");
+const secPublic = s => s.public !== undefined ? !!s.public : (kindOf(s) === "food" || kindOf(s) === "gear" || kindOf(s) === "custom");
+const modeOf = (it, s) => kindOf(s) === "food" ? (isCan(it.text) ? "count" : "food") : "tick";
+function foodTotals(pl) {
+  let used = 0, all = false;
+  Object.values(pl || {}).forEach(v => { if (v.all) all = true; else used += (v.p || 0) * (v.d || 0); });
+  return { used, all, full: all || used >= FOOD_CAP, left: all ? 0 : Math.max(0, FOOD_CAP - used) };
+}
+function applyPledge(cur, who, pl, mode) { // returns new pledges, null (empty) or undefined (rejected)
+  cur = { ...(cur || {}) };
+  if (!pl) { delete cur[who]; return Object.keys(cur).length ? cur : null; }
+  if (mode === "count") { if (!(pl.n >= 1)) return undefined; cur[who] = { n: Math.floor(pl.n) }; return cur; }
+  const others = { ...cur }; delete others[who];
+  const t = foodTotals(others);
+  if (t.full) return undefined;
+  if (pl.all) { cur[who] = { all: true }; return cur; }
+  const p = Math.floor(pl.p), d = Math.floor(pl.d);
+  if (!(p >= 1 && p <= FOOD_PEOPLE && d >= 1 && d <= FOOD_DAYS && p * d <= t.left)) return undefined;
+  cur[who] = { p, d }; return cur;
+}
+function applyClaim(cur, who, on, slots) {
+  cur = { ...(cur || {}) };
+  if (on) { if (!cur[who] && slots && Object.keys(cur).length >= slots) return undefined; cur[who] = true; } else delete cur[who];
+  return Object.keys(cur).length ? cur : null;
+}
 
-$("mine").onclick = async () => {
-  const u = new URL(location.href); u.searchParams.set("me", uid); u.searchParams.set("n", localStorage.getItem(nameKey) || "");
-  try { await navigator.clipboard.writeText(u.toString()); $("mine").textContent = "Copied ✓"; } catch { prompt("Copy this link:", u.toString()); }
-  setTimeout(() => $("mine").textContent = "Copy my personal link", 1500);
+/* ================= store ================= */
+const store = {
+  sub: cb => backend.sub(cb),
+  peek: () => backend.read(),
+  patch: u => backend.patch(u),
+  async init(id, name, access) {
+    const d = await backend.read(); const u = {}; let admin = null;
+    if (!d.sections) { // brand-new list: this person is the admin
+      const a = baseSeed(), g = gearSeed();
+      admin = { code: newCode() }; admin.hash = await sha256(admin.code);
+      Object.assign(u, { sections: { ...a.sections, ...g.sections }, items: { ...a.items, ...g.items }, owner: id, adminHash: admin.hash, version: 2, gearSeeded: true });
+    } else {
+      if (d.removed && d.removed[id]) return { removed: true };
+      if (!d.adminHash && (d.owner === id || (!d.owner && d.members && d.members[id]))) { // list from before admin codes
+        admin = { code: newCode() }; admin.hash = await sha256(admin.code);
+        u.adminHash = admin.hash; u.owner = id;
+      }
+    }
+    u[`members/${id}/name`] = name;
+    const mine = d.members && d.members[id];
+    if (access && !(mine && mine.accessAt)) { u[`members/${id}/access`] = access; u[`members/${id}/accessAt`] = 1; } // restore from personal link
+    await backend.patch(u);
+    return { removed: false, admin };
+  },
+  async claim(iid, who, on, slots) { return backend.tx(`items/${iid}/checks`, cur => applyClaim(cur, who, on, slots)); },
+  async pledge(iid, who, pl, mode) { return backend.tx(`items/${iid}/pledges`, cur => applyPledge(cur, who, pl, mode)); },
+  addItem: (iid, o) => backend.patch({ [`items/${iid}`]: o }),
+  delItem: iid => backend.patch({ [`items/${iid}`]: null }),
+  hide: (kind, id, who) => backend.patch({ [`${kind}s/${id}/hiddenBy/${who}`]: true }),
+  addSection: (sid, o) => backend.patch({ [`sections/${sid}`]: o }),
+  delSection: (sid, itemIds) => { const u = { [`sections/${sid}`]: null }; itemIds.forEach(i => u[`items/${i}`] = null); return backend.patch(u); },
+  removeMember(id, name, itemIds) {
+    const u = { [`members/${id}`]: null, [`removed/${id}`]: name || true };
+    itemIds.forEach(i => { u[`items/${i}/checks/${id}`] = null; u[`items/${i}/pledges/${id}`] = null; });
+    return backend.patch(u);
+  },
+  allowBack: id => backend.patch({ [`removed/${id}`]: null }),
+  setAccess: (id, acc) => backend.patch({ [`members/${id}/access`]: Object.keys(acc).length ? acc : null, [`members/${id}/accessAt`]: Date.now() }),
+  setSlots: (iid, n) => backend.patch({ [`items/${iid}/slots`]: n || null }),
+  setPublic: (sid, v) => backend.patch({ [`sections/${sid}/public`]: v }),
 };
 
-const COLORS = ["var(--me)", "var(--other)", "#8e5bd6", "#c2476b", "#2f8f5b"];
+/* ================= UI helpers ================= */
+const $ = id => document.getElementById(id);
+let state = {}, adminOk = false, recovery = false; const drafts = {};
+const myName = () => localStorage.getItem(nameKey) || "";
+const isAdmin = () => adminOk;
+$("banner").innerHTML = live ? "" : '<div class="banner"><b>Demo mode.</b> Changes stay in this browser only. Add your Firebase details to <code>config.js</code> to share the list (see README).</div>';
+$("link").value = shareUrl();
+$("copy").onclick = async () => { try { await navigator.clipboard.writeText(shareUrl()); $("copy").textContent = "Copied ✓"; } catch { $("link").select(); } setTimeout(() => $("copy").textContent = "Copy link", 1500); };
+
+const PALETTE = ["#d9822b", "#8e5bd6", "#c2476b", "#2f8f5b", "#c9a227", "#2b8cc4", "#a0522d", "#5b6fd6"];
+const hashStr = s => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; };
+// Only the admin sees other people's ticks in their own colours; everyone else sees one colour.
+const tickColor = id => (isAdmin() && id !== uid) ? PALETTE[hashStr(id) % PALETTE.length] : "var(--me)";
+
 function members() {
   const m = state.members || {};
-  const ids = Object.keys(m).sort((a, b) => (a === uid ? -1 : b === uid ? 1 : m[a].name.localeCompare(m[b].name)));
-  return ids.map(id => ({ id, name: m[id].name }));
+  return Object.keys(m).sort((a, b) => (a === uid ? -1 : b === uid ? 1 : (m[a].name || "").localeCompare(m[b].name || ""))).map(id => ({ id, name: m[id].name || "?" }));
+}
+const nameOf = id => { const m = (state.members || {})[id]; return m ? m.name : "a removed member"; };
+
+function personalLink() {
+  const u = new URL(shareUrl()); u.searchParams.set("me", uid); u.searchParams.set("n", myName());
+  if (isAdmin()) u.searchParams.set("k", localStorage.getItem(adminKey));
+  const mine = (state.members || {})[uid]; const acc = mine && mine.access ? Object.keys(mine.access) : [];
+  if (acc.length) u.searchParams.set("a", acc.join(","));
+  return u.toString();
+}
+async function copyPersonal(btn) {
+  const link = personalLink(), old = btn.textContent;
+  try { await navigator.clipboard.writeText(link); btn.textContent = "Copied ✓"; } catch { prompt("Copy this link and keep it safe:", link); }
+  localStorage.setItem(copiedKey, String(Date.now()));
+  setTimeout(() => { btn.textContent = old; render(); }, 1200);
+}
+$("mine").onclick = () => copyPersonal($("mine"));
+
+function ask(msg, allLabel, meLabel) {
+  return new Promise(res => {
+    const dlg = $("askDlg");
+    $("askMsg").textContent = msg; $("askAll").textContent = allLabel; $("askMe").textContent = meLabel;
+    dlg.returnValue = "cancel";
+    dlg.addEventListener("close", () => res(dlg.returnValue === "all" || dlg.returnValue === "me" ? dlg.returnValue : null), { once: true });
+    dlg.showModal();
+  });
+}
+
+/* ---- pledge dialog ---- */
+function pledgeDialog(it, mode, mine, others) {
+  return new Promise(res => {
+    const dlg = $("pledgeDlg"); let out = null;
+    $("pdTitle").textContent = it.text; $("pdErr").textContent = "";
+    $("pdFood").style.display = mode === "food" ? "" : "none";
+    $("pdCount").style.display = mode === "count" ? "" : "none";
+    const t = foodTotals(others);
+    $("pdInfo").textContent = mode === "food"
+      ? `Goal: enough for ${FOOD_PEOPLE} people for ${FOOD_DAYS} days. ${t.left} of ${FOOD_CAP} person-days still needed (people × days).`
+      : "Tell us how many cans / tins you will bring.";
+    const radios = [...document.getElementsByName("pm")];
+    $("pdP").value = mine && mine.p ? mine.p : 1; $("pdD").value = mine && mine.d ? mine.d : 1; $("pdN").value = mine && mine.n ? mine.n : 1;
+    radios.forEach(r => r.checked = r.value === (mine && mine.all ? "all" : "people"));
+    $("pdRemove").style.display = mine ? "" : "none";
+    $("pdSave").onclick = () => {
+      const err = m => { $("pdErr").textContent = m; };
+      if (mode === "count") { const n = Math.floor(+$("pdN").value); if (!(n >= 1)) return err("Enter at least 1."); out = { action: "save", pl: { n } }; }
+      else if (radios.find(r => r.checked).value === "all") out = { action: "save", pl: { all: true } };
+      else {
+        const p = Math.floor(+$("pdP").value), d = Math.floor(+$("pdD").value);
+        if (!(p >= 1 && p <= FOOD_PEOPLE)) return err(`People must be between 1 and ${FOOD_PEOPLE}.`);
+        if (!(d >= 1 && d <= FOOD_DAYS)) return err(`Days must be between 1 and ${FOOD_DAYS}.`);
+        if (p * d > t.left) return err(`Only ${t.left} person-days are still needed. Try fewer people or days.`);
+        out = { action: "save", pl: { p, d } };
+      }
+      dlg.close();
+    };
+    $("pdRemove").onclick = () => { out = { action: "remove" }; dlg.close(); };
+    $("pdCancel").onclick = () => dlg.close();
+    dlg.addEventListener("close", () => res(out), { once: true });
+    dlg.showModal();
+  });
+}
+
+/* ---- access dialog (admin) ---- */
+function accessDialog(member) {
+  const restricted = Object.entries(state.sections || {}).map(([id, v]) => ({ id, ...v })).filter(s => !s.private && !secPublic(s)).sort((a, b) => a.order - b.order);
+  const cur = ((state.members || {})[member.id] || {}).access || {};
+  $("acTitle").textContent = `Lists ${member.name} can see`;
+  const box = $("acList"); box.textContent = "";
+  if (!restricted.length) box.textContent = "There are no restricted lists.";
+  restricted.forEach(s => {
+    const l = document.createElement("label"); l.className = "opt";
+    const c = document.createElement("input"); c.type = "checkbox"; c.value = s.id; c.checked = !!cur[s.id];
+    l.append(c, " " + s.name); box.append(l);
+  });
+  $("acSave").onclick = async () => {
+    const acc = {}; box.querySelectorAll("input:checked").forEach(c => acc[c.value] = true);
+    await store.setAccess(member.id, acc);
+    $("accessDlg").close();
+    alert(`Saved. ${member.name} will be asked to copy their personal link again so the new access is stored in it.`);
+  };
+  $("acCancel").onclick = () => $("accessDlg").close();
+  $("accessDlg").showModal();
+}
+
+/* ================= visibility ================= */
+function canSee(mid, s) { // can member `mid` see section `s`?
+  if (s.private) return s.private === mid;
+  if (mid === state.owner) return true;
+  if (secPublic(s)) return true;
+  const m = (state.members || {})[mid]; return !!(m && m.access && m.access[s.id]);
+}
+function seers(it, s, mem) { // members who have a box on this item
+  return mem.filter(m => canSee(m.id, s) && !(it.hiddenBy && it.hiddenBy[m.id]) && (!it.private || it.private === m.id));
+}
+function applicable(it, s, pid, mode) { // does this item count toward person pid's progress?
+  if (mode === "food") return !!(it.pledges && it.pledges[pid]) || !foodTotals(it.pledges).full;
+  if (mode === "tick" && it.slots) return !!(it.checks && it.checks[pid]) || Object.keys(it.checks || {}).length < it.slots;
+  return true;
+}
+function isDone(it, pid, mode) { return mode === "tick" ? !!(it.checks && it.checks[pid]) : !!(it.pledges && it.pledges[pid]); }
+
+/* ================= render ================= */
+function renderNotices() {
+  const box = $("notice"); box.textContent = ""; if (!state.sections) return;
+  const copied = +(localStorage.getItem(copiedKey) || 0), msgs = [];
+  if (isAdmin() && +(localStorage.getItem(adminAtKey) || 0) > copied) msgs.push("You are the admin. Your personal link now carries your admin code. Copy it and keep it somewhere safe (for example your own WhatsApp chat). It is the only way to get admin rights back on another phone or browser.");
+  const me = (state.members || {})[uid];
+  if (!isAdmin() && me && me.accessAt > 1 && me.accessAt > copied) msgs.push("The admin changed which lists you can see. Copy your personal link again so your access is saved in it.");
+  msgs.forEach(m => {
+    const n = document.createElement("div"); n.className = "notice";
+    const sp = document.createElement("span"); sp.textContent = m;
+    const b = document.createElement("button"); b.className = "primary"; b.textContent = "Copy my personal link";
+    b.onclick = () => copyPersonal(b);
+    n.append(sp, b); box.append(n);
+  });
 }
 
 function render() {
+  if (recovery) return;
   if (state.removed && state.removed[uid]) { showRemoved(); return; }
+  renderNotices();
   const focusId = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.draft : null;
-  const mem = members();
-  const items = Object.entries(state.items || {}).map(([id, v]) => ({ id, ...v }));
-  const secs = Object.entries(state.sections || {}).map(([id, v]) => ({ id, ...v })).sort((a, b) => a.order - b.order);
+  const mem = members(), admin = isAdmin();
+  const allItems = Object.entries(state.items || {}).map(([id, v]) => ({ id, ...v }));
+  const allSecs = Object.entries(state.sections || {}).map(([id, v]) => ({ id, ...v })).sort((a, b) => a.order - b.order);
+  const secById = Object.fromEntries(allSecs.map(s => [s.id, s]));
 
-  // progress
+  const visSecs = allSecs.filter(s => !(s.hiddenBy && s.hiddenBy[uid]) && (admin || canSee(uid, s)));
+  const visSecIds = new Set(visSecs.map(s => s.id));
+  const visItems = allItems.filter(it => secById[it.section] && visSecIds.has(it.section) && !(it.hiddenBy && it.hiddenBy[uid]) && (!it.private || it.private === uid || admin));
+
+  // people + progress
   const ppl = $("people"); ppl.textContent = "";
-  mem.forEach((p, i) => {
-    const done = items.filter(it => it.checks && it.checks[p.id]).length;
+  mem.forEach(p => {
+    const mine = visItems.filter(it => { const s = secById[it.section]; return seers(it, s, mem).some(m => m.id === p.id) && applicable(it, s, p.id, modeOf(it, s)); });
+    const done = mine.filter(it => isDone(it, p.id, modeOf(it, secById[it.section]))).length;
     const d = document.createElement("div"); d.className = "person";
-    d.style.setProperty("--c", p.id === uid ? "var(--me)" : COLORS[(i % (COLORS.length - 1)) + 1]);
+    d.style.setProperty("--c", tickColor(p.id));
     const b = document.createElement("b"); b.textContent = p.name + (p.id === uid ? " (you)" : "");
+    if (p.id === state.owner) b.append(Object.assign(document.createElement("span"), { className: "tag", textContent: "admin" }));
     const bar = document.createElement("div"); bar.className = "bar"; const fill = document.createElement("i");
-    fill.style.width = items.length ? (100 * done / items.length) + "%" : "0"; bar.append(fill);
-    const pc = document.createElement("div"); pc.className = "pc"; pc.textContent = `${done} of ${items.length} packed`;
-    if (state.owner === uid && p.id !== uid) {
-      const rm = document.createElement("button"); rm.className = "x"; rm.title = `Remove ${p.name}`; rm.textContent = "✕";
-      rm.onclick = () => { if (confirm(`Remove ${p.name} from the list? Their ticks are deleted and they can't rejoin from their device.`)) store.removeMember(p.id, items.map(i => i.id)); };
-      b.append(" ", rm);
+    fill.style.width = mine.length ? (100 * done / mine.length) + "%" : "0"; bar.append(fill);
+    const pc = document.createElement("div"); pc.className = "pc"; pc.textContent = `${done} of ${mine.length} packed`;
+    if (admin && p.id !== uid) {
+      const w = document.createElement("span"); w.className = "adm";
+      const lb = document.createElement("button"); lb.textContent = "Lists"; lb.title = `Choose which lists ${p.name} can see`; lb.onclick = () => accessDialog(p);
+      const rm = document.createElement("button"); rm.textContent = "✕"; rm.title = `Remove ${p.name}`;
+      rm.onclick = () => { if (confirm(`Remove ${p.name}? Their ticks are deleted. If this is a duplicate device, that device can get back in by pasting its personal link.`)) store.removeMember(p.id, p.name, allItems.map(i => i.id)); };
+      w.append(lb, rm); b.append(w);
     }
     d.append(b, bar, pc); ppl.append(d);
   });
 
+  // removed devices (admin only)
+  let rbox = $("removedBox");
+  if (!rbox) { rbox = document.createElement("div"); rbox.id = "removedBox"; rbox.className = "removed"; $("people").after(rbox); }
+  rbox.textContent = "";
+  const rem = Object.entries(state.removed || {});
+  if (admin && rem.length) {
+    rbox.append(Object.assign(document.createElement("div"), { className: "hint", textContent: "Removed devices (they can get back in with their personal link, or you can allow them back):" }));
+    rem.forEach(([id, nm]) => {
+      const r = document.createElement("div"); r.className = "r";
+      r.append(`${typeof nm === "string" ? nm : "Someone"} (device …${id.slice(-4)})`);
+      const bt = document.createElement("button"); bt.textContent = "Allow back"; bt.onclick = () => store.allowBack(id);
+      r.append(bt); rbox.append(r);
+    });
+  } else rbox.style.display = "none";
+  if (admin && rem.length) rbox.style.display = "";
+
+  const tag = (txt, title) => { const t = document.createElement("span"); t.className = "tag"; t.textContent = txt; if (title) t.title = title; return t; };
+  const hiddenNames = e => Object.keys(e.hiddenBy || {}).filter(id => id !== uid).map(nameOf);
+
   // sections
   const host = $("sections"); host.textContent = "";
-  secs.forEach(s => {
+  visSecs.forEach(s => {
     const card = document.createElement("div"); card.className = "card sec";
     const h = document.createElement("h2"); const sp = document.createElement("span"); sp.textContent = s.name;
+    if (s.private) sp.append(tag(s.private === uid ? "🔒 Only you" : "🔒 Private · " + nameOf(s.private), "Only the person who made it (and the admin) can see this section"));
+    if (admin && !s.private && !secPublic(s)) { const n = Object.values(state.members || {}).filter(m => m.access && m.access[s.id]).length; sp.append(tag(`🔒 Restricted · ${n} can see`, "Use the Lists button next to a person to give access")); }
+    if (admin && hiddenNames(s).length) sp.append(tag("Hidden by " + hiddenNames(s).join(", ")));
+    if (admin && !s.private) {
+      const w = document.createElement("span"); w.className = "adm";
+      const tb = document.createElement("button"); tb.textContent = secPublic(s) ? "🔓 All can see" : "🔒 Restricted";
+      tb.title = "Click to switch between visible-to-all and restricted";
+      tb.onclick = () => store.setPublic(s.id, !secPublic(s)); w.append(tb); sp.append(w);
+    }
     const del = document.createElement("button"); del.className = "x"; del.title = "Remove section"; del.textContent = "🗑";
-    del.onclick = () => { const mine = items.filter(i => i.section === s.id); if (confirm(`Remove "${s.name}"${mine.length ? ` and its ${mine.length} items` : ""} for everyone?`)) store.delSection(s.id, mine.map(i => i.id)); };
+    del.onclick = async () => {
+      const inSec = allItems.filter(i => i.section === s.id);
+      if (s.private) { if (confirm(`Delete your private section "${s.name}"${inSec.length ? ` and its ${inSec.length} items` : ""}?`)) store.delSection(s.id, inSec.map(i => i.id)); return; }
+      const c = await ask(`Remove "${s.name}"${inSec.length ? ` (${inSec.length} items)` : ""}`, "Remove for everyone", "Remove just for me");
+      if (c === "all") store.delSection(s.id, inSec.map(i => i.id)); else if (c === "me") store.hide("section", s.id, uid);
+    };
     h.append(sp, del); card.append(h);
 
-    items.filter(it => it.section === s.id).sort((a, b) => a.order - b.order).forEach(it => {
+    visItems.filter(it => it.section === s.id).sort((a, b) => a.order - b.order).forEach(it => {
+      const mode = modeOf(it, s), who = seers(it, s, mem);
       const row = document.createElement("div"); row.className = "item";
-      if (mem.length && mem.every(p => it.checks && it.checks[p.id])) row.classList.add("alldone");
-      const t = document.createElement("div"); t.className = "t"; t.textContent = it.text; row.append(t);
-      mem.forEach((p, i) => {
-        const w = document.createElement("label"); w.className = "cb" + (p.id === uid ? " me" : "");
-        const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!(it.checks && it.checks[p.id]);
-        cb.setAttribute("aria-label", `${p.name}: ${it.text}`);
-        if (p.id === uid) cb.onchange = () => store.setCheck(it.id, uid, cb.checked); else cb.disabled = true;
-        const sm = document.createElement("small"); sm.textContent = p.id === uid ? "You" : p.name;
-        w.append(cb, sm); row.append(w);
-      });
+      const t = document.createElement("div"); t.className = "t"; t.textContent = it.text;
+      if (it.private && !s.private) t.append(tag(it.private === uid ? "🔒 Only you" : "🔒 Private · " + nameOf(it.private), "Only the person who added it (and the admin) can see this item"));
+      if (admin && hiddenNames(it).length) t.append(tag("Hidden by " + hiddenNames(it).join(", ")));
+      row.append(t);
+
+      if (mode === "tick") {
+        const claimed = Object.keys(it.checks || {}).length, full = !!(it.slots && claimed >= it.slots);
+        if (!it.slots && who.length && who.every(p => it.checks && it.checks[p.id])) row.classList.add("alldone");
+        if (it.slots) t.append(tag(full ? `✓ Full · ${claimed}/${it.slots} taken` : `${claimed}/${it.slots} taken`, `At most ${it.slots} ${it.slots === 1 ? "person" : "people"} can take this`));
+        who.forEach(p => {
+          const w = document.createElement("label"); w.className = "cb" + (p.id === uid ? " me" : "");
+          const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!(it.checks && it.checks[p.id]);
+          cb.style.accentColor = tickColor(p.id);
+          cb.setAttribute("aria-label", `${p.name}: ${it.text}`);
+          if (p.id === uid) {
+            if (full && !cb.checked) { cb.disabled = true; cb.title = "All spots are taken"; }
+            cb.onchange = async () => { const ok = await store.claim(it.id, uid, cb.checked, it.slots); if (!ok) { cb.checked = false; alert("Sorry, all the spots for this item were just taken."); render(); } };
+          } else cb.disabled = true;
+          const sm = document.createElement("small"); sm.textContent = p.id === uid ? "You" : p.name;
+          w.append(cb, sm); row.append(w);
+        });
+      }
+
+      if (admin && mode === "tick" && kindOf(s) === "gear") {
+        const w = document.createElement("span"); w.className = "adm";
+        const sb = document.createElement("button"); sb.textContent = "Limit"; sb.title = "Set how many people can take this item";
+        sb.onclick = () => { const v = prompt("How many people can take this item? Leave empty for no limit.", it.slots || ""); if (v === null) return; const n = Math.floor(+v); store.setSlots(it.id, n >= 1 ? n : null); };
+        w.append(sb); row.append(w);
+      }
       const x = document.createElement("button"); x.className = "x"; x.title = "Remove item"; x.textContent = "✕";
-      x.onclick = () => store.delItem(it.id); row.append(x);
+      x.onclick = async () => {
+        if (it.private) { if (confirm(`Delete this private item "${it.text}"?`)) store.delItem(it.id); return; }
+        const c = await ask(`Remove "${it.text}"`, "Remove for everyone", "Remove just for me");
+        if (c === "all") store.delItem(it.id); else if (c === "me") store.hide("item", it.id, uid);
+      };
+      row.append(x);
+
+      if (mode !== "tick") {
+        const pl = it.pledges || {}, mineP = pl[uid], fd = document.createElement("div"); fd.className = "fd";
+        const names = Object.keys(pl).sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+        let full = false;
+        if (mode === "food") {
+          const tot = foodTotals(pl); full = tot.full;
+          const cover = document.createElement("div"); cover.className = "cover";
+          const ci = document.createElement("i"); ci.style.width = (tot.all ? 100 : Math.min(100, 100 * tot.used / FOOD_CAP)) + "%"; cover.append(ci); fd.append(cover);
+          const st = document.createElement("div"); st.className = "st";
+          st.textContent = tot.all ? "Covered for everyone" : `${tot.used} of ${FOOD_CAP} person-days covered (${FOOD_PEOPLE} people × ${FOOD_DAYS} days)`;
+          fd.append(st);
+        }
+        if (names.length) {
+          const chips = document.createElement("div"); chips.className = "chips";
+          names.forEach(id => {
+            const v = pl[id], c = document.createElement("span"); c.className = "chip"; c.style.setProperty("--c", tickColor(id));
+            c.textContent = `${id === uid ? "You" : nameOf(id)}: ` + (v.all ? "enough for everyone" : v.n ? `${v.n} ${v.n === 1 ? "can/tin" : "cans/tins"}` : `${v.p} ${v.p === 1 ? "person" : "people"} × ${v.d} ${v.d === 1 ? "day" : "days"}`);
+            chips.append(c);
+          });
+          fd.append(chips);
+        }
+        const r = document.createElement("div"); r.className = "row";
+        if (full && !mineP) r.append(Object.assign(document.createElement("span"), { className: "closed", textContent: "✓ Fully covered. No more entries." }));
+        else {
+          const pb = document.createElement("button"); pb.className = mineP ? "" : "primary";
+          pb.textContent = mineP ? "Change my pledge" : (mode === "count" ? "I'll bring some" : "I can bring some");
+          pb.onclick = async () => {
+            const others = { ...pl }; delete others[uid];
+            const out = await pledgeDialog(it, mode, mineP, others); if (!out) return;
+            const ok = await store.pledge(it.id, uid, out.action === "remove" ? null : out.pl, mode);
+            if (!ok) alert("Sorry, that is more than is still needed. Someone may have just added theirs.");
+          };
+          r.append(pb);
+        }
+        fd.append(r); row.append(fd);
+      }
       card.append(row);
     });
 
     const add = document.createElement("div"); add.className = "add";
     const inp = document.createElement("input"); inp.type = "text"; inp.placeholder = "Add an item…"; inp.dataset.draft = s.id; inp.value = drafts[s.id] || "";
     inp.oninput = () => drafts[s.id] = inp.value;
-    const go = () => { const v = inp.value.trim(); if (!v) return; const n = Math.max(0, ...items.filter(i => i.section === s.id).map(i => i.order)) + 1; drafts[s.id] = ""; inp.value = ""; store.addItem(newId("i"), { text: v, section: s.id, order: Date.now() }); };
-    inp.onkeydown = e => { if (e.key === "Enter") go(); };
+    const go = async () => {
+      const v = inp.value.trim(); if (!v) return;
+      let priv = s.private || null;
+      if (!priv) { const c = await ask(`Add "${v}"`, "Add for everyone", "Add just for me"); if (!c) return; if (c === "me") priv = uid; }
+      drafts[s.id] = ""; inp.value = "";
+      const o = { text: v, section: s.id, order: Date.now() }; if (priv) o.private = priv;
+      store.addItem(newId("i"), o);
+    };
+    inp.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); go(); } };
     const btn = document.createElement("button"); btn.textContent = "Add"; btn.onclick = go;
     add.append(inp, btn); card.append(add); host.append(card);
   });
   if (focusId) { const el = host.querySelector(`[data-draft="${focusId}"]`); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
 }
 
-$("addsec").onclick = () => { const v = $("newsec").value.trim(); if (!v) return; $("newsec").value = ""; store.addSection(newId("s"), { name: v, order: Date.now() }); };
-$("newsec").onkeydown = e => { if (e.key === "Enter") $("addsec").click(); };
+$("addsec").onclick = async () => {
+  const v = $("newsec").value.trim(); if (!v) return;
+  const c = await ask(`Add section "${v}"`, "Add for everyone", "Add just for me"); if (!c) return;
+  $("newsec").value = "";
+  const o = { name: v, order: Date.now(), kind: "custom" }; if (c === "me") o.private = uid; else o.public = true;
+  store.addSection(newId("s"), o);
+};
+$("newsec").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); $("addsec").click(); } };
 
+/* ================= removed / recovery screen ================= */
+function recoveryScreen(title, text) {
+  if (recovery) return; recovery = true;
+  document.querySelector(".wrap").innerHTML = "";
+  const w = document.querySelector(".wrap");
+  w.append(Object.assign(document.createElement("h1"), { textContent: "🌴 Keta Packing List" }));
+  const c = document.createElement("div"); c.className = "card";
+  c.append(Object.assign(document.createElement("b"), { textContent: title }));
+  c.append(Object.assign(document.createElement("p"), { className: "hint", textContent: text }));
+  const inp = document.createElement("input"); inp.type = "text"; inp.placeholder = "Paste your personal link here"; inp.style.width = "100%";
+  const err = Object.assign(document.createElement("div"), { className: "err" });
+  const go = document.createElement("button"); go.className = "primary"; go.textContent = "Continue as me"; go.style.marginTop = "8px";
+  go.onclick = () => {
+    try { const u = new URL(inp.value.trim()); if (!u.searchParams.get("me")) throw 0; location.href = u.toString(); }
+    catch { err.textContent = "That doesn't look like a personal link. It should contain “me=”."; }
+  };
+  c.append(inp, err, go); w.append(c);
+}
 function showRemoved() {
-  document.querySelector(".wrap").innerHTML = '<h1>🌴 Keta Packing List</h1><div class="card"><b>You were removed from this list.</b><p class="hint">Ask the person who shared it with you if this was a mistake.</p></div>';
+  recoveryScreen("This device was removed from the list.", "If this is your second phone or browser, paste your personal link below to continue as yourself. Otherwise, ask the admin to allow you back.");
 }
 
-/* ---------- start ---------- */
+/* ================= start ================= */
 async function start() {
   let name = localStorage.getItem(nameKey);
   if (!name) {
     const dlg = $("nameDlg"); dlg.showModal();
     await new Promise(res => $("nameForm").addEventListener("submit", () => res()));
-    name = $("nameInput").value.trim() || "Guest"; localStorage.setItem(nameKey, name);
+    name = $("nameInput").value.trim() || "Guest";
+    const peek = await store.peek();
+    const dup = Object.entries(peek.members || {}).some(([id, m]) => id !== uid && (m.name || "").toLowerCase() === name.toLowerCase());
+    if (dup && !confirm(`Someone called "${name}" is already on this list. If that is you, press Cancel and open your personal link instead. Joining again creates a second, empty "you". Join as a new person anyway?`)) {
+      recoveryScreen(`"${name}" is already on this list.`, "Paste your personal link below to continue as yourself. You can find it saved in your WhatsApp chat or notes.");
+      return;
+    }
+    localStorage.setItem(nameKey, name);
   }
-  store.sub(s => { state = s; render(); });
-  const r = await store.init(uid, name);
-  if (r.removed) showRemoved();
+  if (!localStorage.getItem(copiedKey)) localStorage.setItem(copiedKey, String(Date.now()));
+  let migrating = false;
+  store.sub(async s => {
+    state = s;
+    const c = localStorage.getItem(adminKey);
+    adminOk = !!(c && s.adminHash && (await sha256(c)) === s.adminHash);
+    render();
+    if (adminOk && !migrating && (!s.gearSeeded || !s.version)) { // bring an older list up to date (admin only)
+      migrating = true;
+      const g = gearSeed(), u = { version: 2, gearSeeded: true };
+      if (!s.gearSeeded) { Object.entries(g.sections).forEach(([k, v]) => u[`sections/${k}`] = v); Object.entries(g.items).forEach(([k, v]) => u[`items/${k}`] = v); }
+      await store.patch(u);
+    }
+  });
+  const r = await store.init(uid, name, linkAccess);
+  if (r.removed) { showRemoved(); return; }
+  if (r.admin) {
+    localStorage.setItem(adminKey, r.admin.code);
+    localStorage.setItem(adminAtKey, String(Date.now() + 5));
+    adminOk = true; render();
+  }
 }
 start();
 </script>
