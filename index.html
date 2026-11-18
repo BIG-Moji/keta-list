@@ -54,6 +54,7 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .notice span{flex:1 1 220px}
 .adm{display:inline-flex;gap:2px;margin-left:4px;vertical-align:middle}
 .adm button,.sec h2 .adm button{padding:0 6px;font-size:.7rem;border-radius:6px;color:var(--mute)}
+.dl{display:flex;gap:8px;flex-wrap:wrap}
 .removed{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}
 .removed .r{display:flex;align-items:center;gap:8px;font-size:.84rem;margin:3px 0}
 dialog .opt{display:block;margin:6px 0;line-height:2}
@@ -81,6 +82,15 @@ dialog form{display:flex;flex-direction:column;gap:10px}
     </div>
     <p class="hint" style="margin:8px 0 0">Send this link to your friend. Anyone with it can edit the list.</p>
     <p class="hint" style="margin:10px 0 0"><button id="mine">Copy my personal link</button> Open it on your other devices to stay the same person. Keep it private: whoever opens it becomes you.</p>
+  </div>
+  <div class="card" id="adminTools" style="display:none">
+    <b>Admin tools</b>
+    <p class="hint" style="margin:4px 0 8px">Download everything people say they will bring: by person and by list.</p>
+    <div class="dl">
+      <button id="dlDoc" class="primary">Download Word document</button>
+      <button id="dlCsv">Download spreadsheet (CSV)</button>
+      <button id="dlPrint">Print / save as PDF</button>
+    </div>
   </div>
   <div id="sections"></div>
   <div class="card newsec">
@@ -280,6 +290,7 @@ const store = {
       admin = { code: newCode() }; admin.hash = await sha256(admin.code);
       Object.assign(u, { sections: { ...a.sections, ...g.sections }, items: { ...a.items, ...g.items }, owner: id, adminHash: admin.hash, version: 2, gearSeeded: true });
     } else {
+      if (d.blocked && d.blocked[id]) return { removed: true, blocked: true };
       if (d.removed && d.removed[id]) return { removed: true };
       if (!d.adminHash && (d.owner === id || (!d.owner && d.members && d.members[id]))) { // list from before admin codes
         admin = { code: newCode() }; admin.hash = await sha256(admin.code);
@@ -299,12 +310,13 @@ const store = {
   hide: (kind, id, who) => backend.patch({ [`${kind}s/${id}/hiddenBy/${who}`]: true }),
   addSection: (sid, o) => backend.patch({ [`sections/${sid}`]: o }),
   delSection: (sid, itemIds) => { const u = { [`sections/${sid}`]: null }; itemIds.forEach(i => u[`items/${i}`] = null); return backend.patch(u); },
-  removeMember(id, name, itemIds) {
-    const u = { [`members/${id}`]: null, [`removed/${id}`]: name || true };
+  removeMember(id, name, itemIds, forever) {
+    const u = { [`members/${id}`]: null, [forever ? `blocked/${id}` : `removed/${id}`]: name || true };
     itemIds.forEach(i => { u[`items/${i}/checks/${id}`] = null; u[`items/${i}/pledges/${id}`] = null; });
     return backend.patch(u);
   },
-  allowBack: id => backend.patch({ [`removed/${id}`]: null }),
+  allowBack: id => backend.patch({ [`removed/${id}`]: null, [`blocked/${id}`]: null }),
+  blockForever: (id, name) => backend.patch({ [`removed/${id}`]: null, [`blocked/${id}`]: name || true }),
   setAccess: (id, acc) => backend.patch({ [`members/${id}/access`]: Object.keys(acc).length ? acc : null, [`members/${id}/accessAt`]: Date.now() }),
   setSlots: (iid, n) => backend.patch({ [`items/${iid}/slots`]: n || null }),
   setPublic: (sid, v) => backend.patch({ [`sections/${sid}/public`]: v }),
@@ -447,8 +459,10 @@ function renderNotices() {
 
 function render() {
   if (recovery) return;
+  if (state.blocked && state.blocked[uid]) { showBlocked(); return; }
   if (state.removed && state.removed[uid]) { showRemoved(); return; }
   renderNotices();
+  $("adminTools").style.display = isAdmin() ? "" : "none";
   const focusId = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.draft : null;
   const mem = members(), admin = isAdmin();
   const allItems = Object.entries(state.items || {}).map(([id, v]) => ({ id, ...v }));
@@ -475,27 +489,42 @@ function render() {
       const w = document.createElement("span"); w.className = "adm";
       const lb = document.createElement("button"); lb.textContent = "Lists"; lb.title = `Choose which lists ${p.name} can see`; lb.onclick = () => accessDialog(p);
       const rm = document.createElement("button"); rm.textContent = "✕"; rm.title = `Remove ${p.name}`;
-      rm.onclick = () => { if (confirm(`Remove ${p.name}? Their ticks are deleted. If this is a duplicate device, that device can get back in by pasting its personal link.`)) store.removeMember(p.id, p.name, allItems.map(i => i.id)); };
+      rm.onclick = async () => {
+        const c = await ask(`Remove ${p.name}? Their ticks and pledges are deleted.`, "Remove (can get back in with their personal link)", "Remove permanently");
+        if (c === "all") store.removeMember(p.id, p.name, allItems.map(i => i.id), false);
+        else if (c === "me" && confirm(`Remove ${p.name} permanently? Their personal link will stop working on this list.`)) store.removeMember(p.id, p.name, allItems.map(i => i.id), true);
+      };
       w.append(lb, rm); b.append(w);
     }
     d.append(b, bar, pc); ppl.append(d);
   });
 
-  // removed devices (admin only)
+  // removed + permanently removed people (admin only)
   let rbox = $("removedBox");
   if (!rbox) { rbox = document.createElement("div"); rbox.id = "removedBox"; rbox.className = "removed"; $("people").after(rbox); }
   rbox.textContent = "";
-  const rem = Object.entries(state.removed || {});
+  const rem = Object.entries(state.removed || {}), blk = Object.entries(state.blocked || {});
+  rbox.style.display = admin && (rem.length || blk.length) ? "" : "none";
   if (admin && rem.length) {
-    rbox.append(Object.assign(document.createElement("div"), { className: "hint", textContent: "Removed devices (they can get back in with their personal link, or you can allow them back):" }));
+    rbox.append(Object.assign(document.createElement("div"), { className: "hint", textContent: "Removed (they can get back in with their personal link):" }));
     rem.forEach(([id, nm]) => {
+      const r = document.createElement("div"); r.className = "r";
+      r.append(`${typeof nm === "string" ? nm : "Someone"} (device …${id.slice(-4)})`);
+      const bt = document.createElement("button"); bt.textContent = "Allow back"; bt.onclick = () => store.allowBack(id);
+      const bf = document.createElement("button"); bf.textContent = "Remove permanently";
+      bf.onclick = () => { if (confirm(`Remove ${typeof nm === "string" ? nm : "this person"} permanently? Their personal link will stop working on this list.`)) store.blockForever(id, typeof nm === "string" ? nm : null); };
+      r.append(bt, bf); rbox.append(r);
+    });
+  }
+  if (admin && blk.length) {
+    rbox.append(Object.assign(document.createElement("div"), { className: "hint", textContent: "Removed permanently:" }));
+    blk.forEach(([id, nm]) => {
       const r = document.createElement("div"); r.className = "r";
       r.append(`${typeof nm === "string" ? nm : "Someone"} (device …${id.slice(-4)})`);
       const bt = document.createElement("button"); bt.textContent = "Allow back"; bt.onclick = () => store.allowBack(id);
       r.append(bt); rbox.append(r);
     });
-  } else rbox.style.display = "none";
-  if (admin && rem.length) rbox.style.display = "";
+  }
 
   const tag = (txt, title) => { const t = document.createElement("span"); t.className = "tag"; t.textContent = txt; if (title) t.title = title; return t; };
   const hiddenNames = e => Object.keys(e.hiddenBy || {}).filter(id => id !== uid).map(nameOf);
@@ -629,6 +658,74 @@ $("addsec").onclick = async () => {
 };
 $("newsec").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); $("addsec").click(); } };
 
+/* ================= admin export ================= */
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function buildSummary() {
+  const secs = Object.entries(state.sections || {}).map(([id, v]) => ({ id, ...v })).sort((a, b) => a.order - b.order);
+  const secById = Object.fromEntries(secs.map(s => [s.id, s]));
+  const items = Object.entries(state.items || {}).map(([id, v]) => ({ id, ...v })).filter(it => secById[it.section]);
+  const out = [];
+  secs.forEach(s => {
+    const mode = it => modeOf(it, s);
+    items.filter(it => it.section === s.id).sort((a, b) => a.order - b.order).forEach(it => {
+      const m = mode(it); const entries = []; let status = "";
+      if (m === "tick") {
+        Object.keys(it.checks || {}).forEach(id => entries.push({ person: nameOf(id), what: kindOf(s) === "personal" ? "Packed" : "Will bring" }));
+        if (it.slots) status = `${entries.length} of ${it.slots} spots taken`;
+        else status = entries.length ? "" : "";
+      } else {
+        const pl = it.pledges || {};
+        Object.keys(pl).forEach(id => { const v = pl[id]; entries.push({ person: nameOf(id), what: v.all ? "Enough for everyone" : v.n ? `${v.n} ${v.n === 1 ? "can/tin" : "cans/tins"}` : `Enough for ${v.p} ${v.p === 1 ? "person" : "people"} for ${v.d} ${v.d === 1 ? "day" : "days"}` }); });
+        if (m === "food") { const t = foodTotals(pl); status = t.all ? "Covered for everyone" : t.full ? "Fully covered" : `${t.used} of ${FOOD_CAP} person-days covered`; }
+        else { const n = Object.values(pl).reduce((a, v) => a + (v.n || 0), 0); status = n ? `${n} cans/tins in total` : ""; }
+      }
+      entries.sort((a, b) => a.person.localeCompare(b.person));
+      out.push({ list: s.name, item: it.text + (it.private ? ` (private to ${nameOf(it.private)})` : ""), status, entries });
+    });
+  });
+  return out;
+}
+function summaryHtml() {
+  const rows = buildSummary(), people = members().map(m => m.name);
+  const byPerson = {}; rows.forEach(r => r.entries.forEach(e => (byPerson[e.person] ||= []).push({ list: r.list, item: r.item, what: e.what })));
+  const lists = [...new Set(rows.map(r => r.list))];
+  const date = new Date().toLocaleString();
+  let h = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><title>Keta Trip Summary</title><style>
+body{font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#1d2a3a}h1{color:#1f6f8b}h2{color:#1f6f8b;border-bottom:1px solid #ccc;padding-bottom:2px;margin-top:22px}h3{margin:14px 0 4px}
+table{border-collapse:collapse;width:100%;margin:4px 0 10px}th,td{border:1px solid #bbb;padding:4px 7px;text-align:left;vertical-align:top;font-size:10.5pt}th{background:#e8f1f5}.none{color:#a33}</style></head><body>
+<h1>Keta Trip: who is bringing what</h1><p>Generated ${esc(date)}. People on the list: ${esc(people.join(", ") || "none yet")}.</p>
+<h2>Part 1: By person</h2>`;
+  people.forEach(p => {
+    const r = byPerson[p] || [];
+    h += `<h3>${esc(p)}</h3>`;
+    h += r.length ? `<table><tr><th>List</th><th>Item</th><th>What they will bring</th></tr>${r.map(x => `<tr><td>${esc(x.list)}</td><td>${esc(x.item)}</td><td>${esc(x.what)}</td></tr>`).join("")}</table>` : "<p>Nothing yet.</p>";
+  });
+  h += "<h2>Part 2: By list</h2>";
+  lists.forEach(l => {
+    const rs = rows.filter(r => r.list === l);
+    h += `<h3>${esc(l)}</h3><table><tr><th style="width:34%">Item</th><th style="width:22%">Status</th><th>Who and what</th></tr>`;
+    rs.forEach(r => { h += `<tr><td>${esc(r.item)}</td><td>${esc(r.status)}</td><td>${r.entries.length ? r.entries.map(e => `${esc(e.person)}: ${esc(e.what)}`).join("<br>") : '<span class="none">Nobody yet</span>'}</td></tr>`; });
+    h += "</table>";
+  });
+  return h + "</body></html>";
+}
+function summaryCsv() {
+  const q = v => '"' + String(v).replace(/"/g, '""') + '"';
+  const lines = [["List", "Item", "Status", "Person", "What they will bring"].map(q).join(",")];
+  buildSummary().forEach(r => {
+    if (!r.entries.length) lines.push([r.list, r.item, r.status, "", "Nobody yet"].map(q).join(","));
+    r.entries.forEach(e => lines.push([r.list, r.item, r.status, e.person, e.what].map(q).join(",")));
+  });
+  return "\ufeff" + lines.join("\r\n");
+}
+function download(name, text, type) {
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name;
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+$("dlDoc").onclick = () => download("Keta_Trip_Who_Brings_What.doc", summaryHtml(), "application/msword");
+$("dlCsv").onclick = () => download("Keta_Trip_Who_Brings_What.csv", summaryCsv(), "text/csv;charset=utf-8");
+$("dlPrint").onclick = () => { const w = window.open("", "_blank"); if (!w) { alert("Please allow pop-ups for this site to print."); return; } w.document.write(summaryHtml()); w.document.close(); w.focus(); setTimeout(() => w.print(), 400); };
+
 /* ================= removed / recovery screen ================= */
 function recoveryScreen(title, text) {
   if (recovery) return; recovery = true;
@@ -646,6 +743,15 @@ function recoveryScreen(title, text) {
     catch { err.textContent = "That doesn't look like a personal link. It should contain “me=”."; }
   };
   c.append(inp, err, go); w.append(c);
+}
+function showBlocked() {
+  if (recovery) return; recovery = true;
+  const w = document.querySelector(".wrap"); w.textContent = "";
+  w.append(Object.assign(document.createElement("h1"), { textContent: "🌴 Keta Packing List" }));
+  const c = document.createElement("div"); c.className = "card";
+  c.append(Object.assign(document.createElement("b"), { textContent: "You were removed from this list." }));
+  c.append(Object.assign(document.createElement("p"), { className: "hint", textContent: "The admin removed you permanently. If you think this is a mistake, please contact the admin." }));
+  w.append(c);
 }
 function showRemoved() {
   recoveryScreen("This device was removed from the list.", "If this is your second phone or browser, paste your personal link below to continue as yourself. Otherwise, ask the admin to allow you back.");
@@ -681,7 +787,7 @@ async function start() {
     }
   });
   const r = await store.init(uid, name, linkAccess);
-  if (r.removed) { showRemoved(); return; }
+  if (r.removed) { r.blocked ? showBlocked() : showRemoved(); return; }
   if (r.admin) {
     localStorage.setItem(adminKey, r.admin.code);
     localStorage.setItem(adminAtKey, String(Date.now() + 5));
