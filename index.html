@@ -126,8 +126,20 @@ if (live) {
   const root = `lists/${listId}`;
   store = {
     sub(cb) { onValue(ref(db, root), s => cb(s.val() || {})); },
-    async seedIfEmpty() { const s = await get(ref(db, root + "/sections")); if (!s.exists()) await update(ref(db, root), seedData()); },
-    setMember: (id, name) => set(ref(db, `${root}/members/${id}`), { name }),
+    async init(id, name) {
+      let snap = await get(ref(db, root));
+      let d = snap.val() || {};
+      if (!d.sections) { await update(ref(db, root), { ...seedData(), owner: id }); d = { owner: id }; }
+      if (d.removed && d.removed[id]) return { removed: true };
+      if (!d.owner && d.members && d.members[id]) await set(ref(db, root + "/owner"), id);
+      await set(ref(db, `${root}/members/${id}`), { name });
+      return { removed: false };
+    },
+    async removeMember(id, itemIds) {
+      const u = { [`members/${id}`]: null, [`removed/${id}`]: true };
+      itemIds.forEach(i => u[`items/${i}/checks/${id}`] = null);
+      await update(ref(db, root), u);
+    },
     setCheck: (iid, id, v) => v ? set(ref(db, `${root}/items/${iid}/checks/${id}`), true) : remove(ref(db, `${root}/items/${iid}/checks/${id}`)),
     addItem: (iid, o) => set(ref(db, `${root}/items/${iid}`), o),
     delItem: iid => remove(ref(db, `${root}/items/${iid}`)),
@@ -142,8 +154,18 @@ if (live) {
   addEventListener("storage", e => { if (e.key === key) fire(); });
   store = {
     sub(f) { cb = f; fire(); },
-    async seedIfEmpty() { const d = read(); if (!d.sections) write({ ...d, ...seedData() }); },
-    setMember: (id, name) => { const d = read(); (d.members ||= {})[id] = { name }; write(d); },
+    async init(id, name) {
+      let d = read();
+      if (!d.sections) d = { ...d, ...seedData(), owner: id };
+      if (d.removed && d.removed[id]) return { removed: true };
+      if (!d.owner && d.members && d.members[id]) d.owner = id;
+      (d.members ||= {})[id] = { name }; write(d);
+      return { removed: false };
+    },
+    async removeMember(id, itemIds) {
+      const d = read(); delete (d.members || {})[id]; (d.removed ||= {})[id] = true;
+      itemIds.forEach(i => { if (d.items[i] && d.items[i].checks) delete d.items[i].checks[id]; }); write(d);
+    },
     setCheck: (iid, id, v) => { const d = read(); const it = d.items[iid]; if (!it) return; it.checks ||= {}; v ? it.checks[id] = true : delete it.checks[id]; write(d); },
     addItem: (iid, o) => { const d = read(); (d.items ||= {})[iid] = o; write(d); },
     delItem: iid => { const d = read(); delete d.items[iid]; write(d); },
@@ -167,6 +189,7 @@ function members() {
 }
 
 function render() {
+  if (state.removed && state.removed[uid]) { showRemoved(); return; }
   const focusId = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.draft : null;
   const mem = members();
   const items = Object.entries(state.items || {}).map(([id, v]) => ({ id, ...v }));
@@ -182,6 +205,11 @@ function render() {
     const bar = document.createElement("div"); bar.className = "bar"; const fill = document.createElement("i");
     fill.style.width = items.length ? (100 * done / items.length) + "%" : "0"; bar.append(fill);
     const pc = document.createElement("div"); pc.className = "pc"; pc.textContent = `${done} of ${items.length} packed`;
+    if (state.owner === uid && p.id !== uid) {
+      const rm = document.createElement("button"); rm.className = "x"; rm.title = `Remove ${p.name}`; rm.textContent = "✕";
+      rm.onclick = () => { if (confirm(`Remove ${p.name} from the list? Their ticks are deleted and they can't rejoin from their device.`)) store.removeMember(p.id, items.map(i => i.id)); };
+      b.append(" ", rm);
+    }
     d.append(b, bar, pc); ppl.append(d);
   });
 
@@ -225,6 +253,10 @@ function render() {
 $("addsec").onclick = () => { const v = $("newsec").value.trim(); if (!v) return; $("newsec").value = ""; store.addSection(newId("s"), { name: v, order: Date.now() }); };
 $("newsec").onkeydown = e => { if (e.key === "Enter") $("addsec").click(); };
 
+function showRemoved() {
+  document.querySelector(".wrap").innerHTML = '<h1>🌴 Keta Packing List</h1><div class="card"><b>You were removed from this list.</b><p class="hint">Ask the person who shared it with you if this was a mistake.</p></div>';
+}
+
 /* ---------- start ---------- */
 async function start() {
   let name = localStorage.getItem(nameKey);
@@ -234,8 +266,8 @@ async function start() {
     name = $("nameInput").value.trim() || "Guest"; localStorage.setItem(nameKey, name);
   }
   store.sub(s => { state = s; render(); });
-  await store.seedIfEmpty();
-  store.setMember(uid, name);
+  const r = await store.init(uid, name);
+  if (r.removed) showRemoved();
 }
 start();
 </script>
