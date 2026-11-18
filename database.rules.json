@@ -1,0 +1,11 @@
+{
+  "rules": {
+    "lists": {
+      "$listId": {
+        ".read": true,
+        ".write": true,
+        ".validate": "$listId.length >= 8 && $listId.length <= 40"
+      }
+    }
+  }
+}
