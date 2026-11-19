@@ -41,7 +41,12 @@ Open your site. It creates a private list link like `...?list=keta-ab12cd34ef`. 
 - **Food pledges:** each food item shows a progress bar for 15 people x 14 days (210 person-days). People pledge "I can bring enough to feed X people for Y days" or "I can bring enough for everyone". The item closes when the total reaches 210. Tinned and canned items just take a number of cans or tins.
 - **Kitchen items with limited spots:** items such as "Gas cylinder" (1) or "Sauce pans" (2) close when the spots are taken. The admin can change the limit with the **Limit** button.
 
+- **See what each person has packed:** the admin can click any person's name at the top to see their lists, what they have ticked, and their food entries (people × days, person-days, cans or tins, and the amount they typed). Anyone can add an optional amount such as "3 kg" or "2 crates" when they pledge.
 - **Download the summary:** the admin sees an **Admin tools** card with three buttons: a Word document (who is bringing what, by person and by list), a spreadsheet (CSV), and print / save as PDF.
 - **Remove permanently:** pressing ✕ next to a person asks whether to remove them so they can still get back in with their personal link, or remove them permanently. Anyone removed the first way can also be converted with **Remove permanently** under "Removed". A permanently removed person's personal link stops working on this list. The admin can undo this with **Allow back**.
 
 **Honest limit:** there are no logins. The admin code, list access and removals are enforced by the app, not by the database, so someone who deliberately edits the database directly could bypass them. A permanently removed person could also rejoin as a brand-new person by clearing their browser data and using the normal link, so use a new list if you need a complete lockout. For friends and family sharing a link this is normally fine.
+
+## Troubleshooting
+
+- **The page loads but the list is empty:** the link probably picked up a stray space or line break (it ends in `%0A` in the address bar) when it was copied or pasted. The latest `index.html` ignores these automatically. If it still happens, ask for the link again and send it on its own line.
