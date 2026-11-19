@@ -54,6 +54,13 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .notice span{flex:1 1 220px}
 .adm{display:inline-flex;gap:2px;margin-left:4px;vertical-align:middle}
 .adm button,.sec h2 .adm button{padding:0 6px;font-size:.7rem;border-radius:6px;color:var(--mute)}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);max-width:min(92vw,380px);background:#2f6f5a;color:#fff;border-radius:14px;padding:12px 16px;box-shadow:0 8px 24px rgba(0,0,0,.25);font-size:.95rem;line-height:1.4;z-index:50;cursor:pointer;animation:rise .35s ease}
+.toast b{display:block;margin-bottom:2px}
+@keyframes rise{from{opacity:0;transform:translate(-50%,12px)}to{opacity:1;transform:translate(-50%,0)}}
+.who{cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}
+.pl{margin:2px 0 8px;padding:0;list-style:none;font-size:.88rem}
+.pl li{display:flex;gap:7px;padding:2px 0}
+.pl .no{color:var(--mute)}
 .dl{display:flex;gap:8px;flex-wrap:wrap}
 .removed{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}
 .removed .r{display:flex;align-items:center;gap:8px;font-size:.84rem;margin:3px 0}
@@ -119,8 +126,18 @@ dialog form{display:flex;flex-direction:column;gap:10px}
       <label class="opt"><input type="radio" name="pm" value="all"> I can bring enough for everyone</label>
     </div>
     <div id="pdCount"><label>I'll bring <input type="number" id="pdN" min="1" max="999" value="1"> cans / tins</label></div>
+    <input type="text" id="pdNote" maxlength="40" placeholder="Optional: how much? e.g. 3 kg, 2 crates" style="width:100%">
     <div class="err" id="pdErr"></div>
     <div class="row"><button type="button" class="primary" id="pdSave">Save</button><button type="button" id="pdRemove">Remove my pledge</button><button type="button" id="pdCancel">Cancel</button></div>
+  </div>
+</dialog>
+
+<dialog id="personDlg" style="max-width:440px;width:92vw">
+  <div style="display:flex;flex-direction:column;gap:8px">
+    <b id="ppTitle"></b>
+    <div class="hint" id="ppSummary"></div>
+    <div id="ppBody" style="max-height:60vh;overflow:auto"></div>
+    <div class="row"><button type="button" class="primary" id="ppClose">Close</button></div>
   </div>
 </dialog>
 
@@ -146,7 +163,9 @@ import { FIREBASE_CONFIG } from "./config.js";
 
 /* ================= list id + identity ================= */
 const params = new URLSearchParams(location.search);
-let listId = params.get("list");
+// Links often pick up stray spaces or line breaks (%0A) when copied or pasted in chats. Keep only safe characters.
+const clean = v => String(v || "").replace(/[^A-Za-z0-9_-]/g, "");
+let listId = clean(params.get("list"));
 if (!listId) {
   listId = "keta-" + Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 6);
 }
@@ -156,10 +175,10 @@ const adminKey = "keta-admin-" + listId, adminAtKey = "keta-adminAt-" + listId, 
 // A personal link carries: me (identity), n (name), k (admin code, admin only), a (granted lists)
 let linkAccess = null;
 if (params.get("me")) {
-  localStorage.setItem(uidKey, params.get("me"));
-  if (params.get("n")) localStorage.setItem(nameKey, params.get("n"));
-  if (params.get("k")) localStorage.setItem(adminKey, params.get("k"));
-  if (params.get("a")) { linkAccess = {}; params.get("a").split(",").filter(Boolean).forEach(x => linkAccess[x] = true); }
+  if (clean(params.get("me"))) localStorage.setItem(uidKey, clean(params.get("me")));
+  if (params.get("n")) localStorage.setItem(nameKey, params.get("n").trim());
+  if (clean(params.get("k"))) localStorage.setItem(adminKey, clean(params.get("k")));
+  if (params.get("a")) { linkAccess = {}; params.get("a").split(",").map(clean).filter(Boolean).forEach(x => linkAccess[x] = true); }
   params.delete("me"); params.delete("n"); params.delete("k"); params.delete("a");
 }
 params.set("list", listId);
@@ -260,17 +279,18 @@ function foodTotals(pl) {
   Object.values(pl || {}).forEach(v => { if (v.all) all = true; else used += (v.p || 0) * (v.d || 0); });
   return { used, all, full: all || used >= FOOD_CAP, left: all ? 0 : Math.max(0, FOOD_CAP - used) };
 }
+const noteOf = pl => { const n = String((pl && pl.note) || "").trim().slice(0, 40); return n ? { note: n } : {}; };
 function applyPledge(cur, who, pl, mode) { // returns new pledges, null (empty) or undefined (rejected)
   cur = { ...(cur || {}) };
   if (!pl) { delete cur[who]; return Object.keys(cur).length ? cur : null; }
-  if (mode === "count") { if (!(pl.n >= 1)) return undefined; cur[who] = { n: Math.floor(pl.n) }; return cur; }
+  if (mode === "count") { if (!(pl.n >= 1)) return undefined; cur[who] = { n: Math.floor(pl.n), ...noteOf(pl) }; return cur; }
   const others = { ...cur }; delete others[who];
   const t = foodTotals(others);
   if (t.full) return undefined;
-  if (pl.all) { cur[who] = { all: true }; return cur; }
+  if (pl.all) { cur[who] = { all: true, ...noteOf(pl) }; return cur; }
   const p = Math.floor(pl.p), d = Math.floor(pl.d);
   if (!(p >= 1 && p <= FOOD_PEOPLE && d >= 1 && d <= FOOD_DAYS && p * d <= t.left)) return undefined;
-  cur[who] = { p, d }; return cur;
+  cur[who] = { p, d, ...noteOf(pl) }; return cur;
 }
 function applyClaim(cur, who, on, slots) {
   cur = { ...(cur || {}) };
@@ -367,6 +387,18 @@ function ask(msg, allLabel, meLabel) {
   });
 }
 
+/* ---- thank you ---- */
+let toastTimer;
+function thank(itemText) {
+  const what = itemText.split(/\s*[\(\/]/)[0].trim().toLowerCase() || "this";
+  document.querySelectorAll(".toast").forEach(t => t.remove()); clearTimeout(toastTimer);
+  const t = document.createElement("div"); t.className = "toast"; t.setAttribute("role", "status");
+  t.append(Object.assign(document.createElement("b"), { textContent: `Thank you, ${myName() || "friend"} 💛` }));
+  t.append(`Bringing the ${what} means so much to all of us. We're grateful for you.`);
+  t.onclick = () => t.remove(); document.body.append(t);
+  toastTimer = setTimeout(() => t.remove(), 6000);
+}
+
 /* ---- pledge dialog ---- */
 function pledgeDialog(it, mode, mine, others) {
   return new Promise(res => {
@@ -381,17 +413,17 @@ function pledgeDialog(it, mode, mine, others) {
     const radios = [...document.getElementsByName("pm")];
     $("pdP").value = mine && mine.p ? mine.p : 1; $("pdD").value = mine && mine.d ? mine.d : 1; $("pdN").value = mine && mine.n ? mine.n : 1;
     radios.forEach(r => r.checked = r.value === (mine && mine.all ? "all" : "people"));
-    $("pdRemove").style.display = mine ? "" : "none";
+    $("pdNote").value = (mine && mine.note) || ""; $("pdRemove").style.display = mine ? "" : "none";
     $("pdSave").onclick = () => {
       const err = m => { $("pdErr").textContent = m; };
-      if (mode === "count") { const n = Math.floor(+$("pdN").value); if (!(n >= 1)) return err("Enter at least 1."); out = { action: "save", pl: { n } }; }
-      else if (radios.find(r => r.checked).value === "all") out = { action: "save", pl: { all: true } };
+      if (mode === "count") { const n = Math.floor(+$("pdN").value); if (!(n >= 1)) return err("Enter at least 1."); out = { action: "save", pl: { n, note: $("pdNote").value } }; }
+      else if (radios.find(r => r.checked).value === "all") out = { action: "save", pl: { all: true, note: $("pdNote").value } };
       else {
         const p = Math.floor(+$("pdP").value), d = Math.floor(+$("pdD").value);
         if (!(p >= 1 && p <= FOOD_PEOPLE)) return err(`People must be between 1 and ${FOOD_PEOPLE}.`);
         if (!(d >= 1 && d <= FOOD_DAYS)) return err(`Days must be between 1 and ${FOOD_DAYS}.`);
         if (p * d > t.left) return err(`Only ${t.left} person-days are still needed. Try fewer people or days.`);
-        out = { action: "save", pl: { p, d } };
+        out = { action: "save", pl: { p, d, note: $("pdNote").value } };
       }
       dlg.close();
     };
@@ -400,6 +432,40 @@ function pledgeDialog(it, mode, mine, others) {
     dlg.addEventListener("close", () => res(out), { once: true });
     dlg.showModal();
   });
+}
+
+/* ---- person detail (admin) ---- */
+function personDialog(p) {
+  const mem = members();
+  const secs = Object.entries(state.sections || {}).map(([id, v]) => ({ id, ...v })).sort((a, b) => a.order - b.order);
+  const items = Object.entries(state.items || {}).map(([id, v]) => ({ id, ...v }));
+  const body = $("ppBody"); body.textContent = "";
+  let days = 0, cans = 0, packed = 0, total = 0;
+  secs.forEach(s => {
+    if (!canSee(p.id, s)) return;
+    const its = items.filter(it => it.section === s.id && seers(it, s, mem).some(m => m.id === p.id)).sort((a, b) => a.order - b.order);
+    if (!its.length) return;
+    const done = its.filter(it => isDone(it, p.id, modeOf(it, s))).length; packed += done; total += its.length;
+    const h = document.createElement("b"); h.textContent = `${s.name}: ${done} of ${its.length}`; h.style.display = "block"; h.style.marginTop = "8px"; body.append(h);
+    const ul = document.createElement("ul"); ul.className = "pl";
+    its.forEach(it => {
+      const m = modeOf(it, s), li = document.createElement("li"), v = (it.pledges || {})[p.id], d = isDone(it, p.id, m);
+      li.append(Object.assign(document.createElement("span"), { textContent: d ? "✔" : "○", className: d ? "" : "no" }));
+      let txt = it.text;
+      if (m !== "tick" && v) {
+        txt += ": " + pledgeText(v);
+        if (m === "food" && !v.all) { days += v.p * v.d; txt += ` = ${v.p * v.d} person-days`; }
+        if (m === "count") cans += v.n;
+      }
+      li.append(Object.assign(document.createElement("span"), { textContent: txt, className: d ? "" : "no" }));
+      ul.append(li);
+    });
+    body.append(ul);
+  });
+  $("ppTitle").textContent = p.name;
+  $("ppSummary").textContent = `${packed} of ${total} items done` + (days ? ` · ${days} person-days of food` : "") + (cans ? ` · ${cans} cans/tins` : "");
+  $("ppClose").onclick = () => $("personDlg").close();
+  $("personDlg").showModal();
 }
 
 /* ---- access dialog (admin) ---- */
@@ -423,6 +489,8 @@ function accessDialog(member) {
   $("acCancel").onclick = () => $("accessDlg").close();
   $("accessDlg").showModal();
 }
+
+const pledgeText = v => (v.all ? "enough for everyone" : v.n ? `${v.n} ${v.n === 1 ? "can/tin" : "cans/tins"}` : `${v.p} ${v.p === 1 ? "person" : "people"} × ${v.d} ${v.d === 1 ? "day" : "days"}`) + (v.note ? ` (${v.note})` : "");
 
 /* ================= visibility ================= */
 function canSee(mid, s) { // can member `mid` see section `s`?
@@ -480,7 +548,10 @@ function render() {
     const done = mine.filter(it => isDone(it, p.id, modeOf(it, secById[it.section]))).length;
     const d = document.createElement("div"); d.className = "person";
     d.style.setProperty("--c", tickColor(p.id));
-    const b = document.createElement("b"); b.textContent = p.name + (p.id === uid ? " (you)" : "");
+    const b = document.createElement("b");
+    const nm = document.createElement("span"); nm.textContent = p.name + (p.id === uid ? " (you)" : "");
+    if (admin) { nm.className = "who"; nm.title = `See what ${p.name} has packed and is bringing`; nm.onclick = () => personDialog(p); }
+    b.append(nm);
     if (p.id === state.owner) b.append(Object.assign(document.createElement("span"), { className: "tag", textContent: "admin" }));
     const bar = document.createElement("div"); bar.className = "bar"; const fill = document.createElement("i");
     fill.style.width = mine.length ? (100 * done / mine.length) + "%" : "0"; bar.append(fill);
@@ -571,7 +642,7 @@ function render() {
           cb.setAttribute("aria-label", `${p.name}: ${it.text}`);
           if (p.id === uid) {
             if (full && !cb.checked) { cb.disabled = true; cb.title = "All spots are taken"; }
-            cb.onchange = async () => { const ok = await store.claim(it.id, uid, cb.checked, it.slots); if (!ok) { cb.checked = false; alert("Sorry, all the spots for this item were just taken."); render(); } };
+            cb.onchange = async () => { const ok = await store.claim(it.id, uid, cb.checked, it.slots); if (!ok) { cb.checked = false; alert("Sorry, all the spots for this item were just taken."); render(); } else if (cb.checked && kindOf(s) === "gear") thank(it.text); };
           } else cb.disabled = true;
           const sm = document.createElement("small"); sm.textContent = p.id === uid ? "You" : p.name;
           w.append(cb, sm); row.append(w);
@@ -608,7 +679,7 @@ function render() {
           const chips = document.createElement("div"); chips.className = "chips";
           names.forEach(id => {
             const v = pl[id], c = document.createElement("span"); c.className = "chip"; c.style.setProperty("--c", tickColor(id));
-            c.textContent = `${id === uid ? "You" : nameOf(id)}: ` + (v.all ? "enough for everyone" : v.n ? `${v.n} ${v.n === 1 ? "can/tin" : "cans/tins"}` : `${v.p} ${v.p === 1 ? "person" : "people"} × ${v.d} ${v.d === 1 ? "day" : "days"}`);
+            c.textContent = `${id === uid ? "You" : nameOf(id)}: ` + pledgeText(v);
             chips.append(c);
           });
           fd.append(chips);
@@ -623,6 +694,7 @@ function render() {
             const out = await pledgeDialog(it, mode, mineP, others); if (!out) return;
             const ok = await store.pledge(it.id, uid, out.action === "remove" ? null : out.pl, mode);
             if (!ok) alert("Sorry, that is more than is still needed. Someone may have just added theirs.");
+            else if (out.action === "save" && !mineP) thank(it.text);
           };
           r.append(pb);
         }
@@ -675,7 +747,7 @@ function buildSummary() {
         else status = entries.length ? "" : "";
       } else {
         const pl = it.pledges || {};
-        Object.keys(pl).forEach(id => { const v = pl[id]; entries.push({ person: nameOf(id), what: v.all ? "Enough for everyone" : v.n ? `${v.n} ${v.n === 1 ? "can/tin" : "cans/tins"}` : `Enough for ${v.p} ${v.p === 1 ? "person" : "people"} for ${v.d} ${v.d === 1 ? "day" : "days"}` }); });
+        Object.keys(pl).forEach(id => { const v = pl[id]; entries.push({ person: nameOf(id), what: (v.all ? "Enough for everyone" : v.n ? `${v.n} ${v.n === 1 ? "can/tin" : "cans/tins"}` : `Enough for ${v.p} ${v.p === 1 ? "person" : "people"} for ${v.d} ${v.d === 1 ? "day" : "days"}`) + (v.note ? ` (${v.note})` : "") }); });
         if (m === "food") { const t = foodTotals(pl); status = t.all ? "Covered for everyone" : t.full ? "Fully covered" : `${t.used} of ${FOOD_CAP} person-days covered`; }
         else { const n = Object.values(pl).reduce((a, v) => a + (v.n || 0), 0); status = n ? `${n} cans/tins in total` : ""; }
       }
@@ -739,7 +811,7 @@ function recoveryScreen(title, text) {
   const err = Object.assign(document.createElement("div"), { className: "err" });
   const go = document.createElement("button"); go.className = "primary"; go.textContent = "Continue as me"; go.style.marginTop = "8px";
   go.onclick = () => {
-    try { const u = new URL(inp.value.trim()); if (!u.searchParams.get("me")) throw 0; location.href = u.toString(); }
+    try { const u = new URL(inp.value.replace(/\s+/g, "")); if (!clean(u.searchParams.get("me"))) throw 0; location.href = u.toString(); }
     catch { err.textContent = "That doesn't look like a personal link. It should contain “me=”."; }
   };
   c.append(inp, err, go); w.append(c);
