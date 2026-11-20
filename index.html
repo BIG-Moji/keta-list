@@ -30,7 +30,8 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .x{border:0;background:none;color:var(--mute);padding:2px 8px;font-size:1.1rem}
 .item{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line)}
 .item:first-of-type{border-top:0}
-.item .t{flex:1;min-width:0;word-break:break-word}
+.item .t{flex:1 1 100%;min-width:0;word-break:normal;overflow-wrap:break-word}
+.item .cb:first-of-type{margin-left:0}
 .item.alldone .t{color:var(--mute);text-decoration:line-through}
 .cb{display:flex;flex-direction:column;align-items:center;gap:1px;min-width:44px}
 .cb small{font-size:.62rem;color:var(--mute);max-width:56px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
