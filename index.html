@@ -444,10 +444,10 @@ function personDialog(p) {
   let days = 0, cans = 0, packed = 0, total = 0;
   secs.forEach(s => {
     if (!canSee(p.id, s)) return;
-    const its = items.filter(it => it.section === s.id && seers(it, s, mem).some(m => m.id === p.id)).sort((a, b) => a.order - b.order);
+    const its = items.filter(it => it.section === s.id && seers(it, s, mem).some(m => m.id === p.id) && isDone(it, p.id, modeOf(it, s))).sort((a, b) => a.order - b.order);
     if (!its.length) return;
-    const done = its.filter(it => isDone(it, p.id, modeOf(it, s))).length; packed += done; total += its.length;
-    const h = document.createElement("b"); h.textContent = `${s.name}: ${done} of ${its.length}`; h.style.display = "block"; h.style.marginTop = "8px"; body.append(h);
+    packed += its.length;
+    const h = document.createElement("b"); h.textContent = `${s.name}: ${its.length}`; h.style.display = "block"; h.style.marginTop = "8px"; body.append(h);
     const ul = document.createElement("ul"); ul.className = "pl";
     its.forEach(it => {
       const m = modeOf(it, s), li = document.createElement("li"), v = (it.pledges || {})[p.id], d = isDone(it, p.id, m);
@@ -464,7 +464,7 @@ function personDialog(p) {
     body.append(ul);
   });
   $("ppTitle").textContent = p.name;
-  $("ppSummary").textContent = `${packed} of ${total} items done` + (days ? ` · ${days} person-days of food` : "") + (cans ? ` · ${cans} cans/tins` : "");
+  $("ppSummary").textContent = (packed ? `${packed} ${packed === 1 ? "item" : "items"} selected` : "Nothing selected yet") + (days ? ` · ${days} person-days of food` : "") + (cans ? ` · ${cans} cans/tins` : "");
   $("ppClose").onclick = () => $("personDlg").close();
   $("personDlg").showModal();
 }
@@ -753,6 +753,7 @@ function buildSummary() {
         else { const n = Object.values(pl).reduce((a, v) => a + (v.n || 0), 0); status = n ? `${n} cans/tins in total` : ""; }
       }
       entries.sort((a, b) => a.person.localeCompare(b.person));
+      if (!entries.length) return;
       out.push({ list: s.name, item: it.text + (it.private ? ` (private to ${nameOf(it.private)})` : ""), status, entries });
     });
   });
@@ -771,7 +772,7 @@ table{border-collapse:collapse;width:100%;margin:4px 0 10px}th,td{border:1px sol
   people.forEach(p => {
     const r = byPerson[p] || [];
     h += `<h3>${esc(p)}</h3>`;
-    h += r.length ? `<table><tr><th>List</th><th>Item</th><th>What they will bring</th></tr>${r.map(x => `<tr><td>${esc(x.list)}</td><td>${esc(x.item)}</td><td>${esc(x.what)}</td></tr>`).join("")}</table>` : "<p>Nothing yet.</p>";
+    h += r.length ? `<table><tr><th>List</th><th>Item</th><th>What they will bring</th></tr>${r.map(x => `<tr><td>${esc(x.list)}</td><td>${esc(x.item)}</td><td>${esc(x.what)}</td></tr>`).join("")}</table>` : "<p>Nothing selected yet.</p>";
   });
   h += "<h2>Part 2: By list</h2>";
   lists.forEach(l => {
@@ -786,7 +787,6 @@ function summaryCsv() {
   const q = v => '"' + String(v).replace(/"/g, '""') + '"';
   const lines = [["List", "Item", "Status", "Person", "What they will bring"].map(q).join(",")];
   buildSummary().forEach(r => {
-    if (!r.entries.length) lines.push([r.list, r.item, r.status, "", "Nobody yet"].map(q).join(","));
     r.entries.forEach(e => lines.push([r.list, r.item, r.status, e.person, e.what].map(q).join(",")));
   });
   return "\ufeff" + lines.join("\r\n");
